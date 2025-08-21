@@ -98,8 +98,8 @@ class CarState(CarStateBase):
     ret.steeringTorqueEps = cp.vl["MDPS12"]["CR_Mdps_OutTq"]
     ret.steeringPressed = self.update_steering_pressed(abs(ret.steeringTorque) > self.params.STEER_THRESHOLD, 5)
     ret.steerFaultTemporary = cp.vl["MDPS12"]["CF_Mdps_ToiUnavail"] != 0 or cp.vl["MDPS12"]["CF_Mdps_ToiFlt"] != 0
-
-cruise_set_pressed = cp.vl["CLU11"]["CF_Clu_CruiseSwState"] == Buttons.SET
+    
+    cruise_set_pressed = cp.vl["CLU11"]["CF_Clu_CruiseSwState"] == Buttons.SET_DECEL
     
     # cruise state
     if self.CP.openpilotLongitudinalControl:
@@ -109,13 +109,11 @@ cruise_set_pressed = cp.vl["CLU11"]["CF_Clu_CruiseSwState"] == Buttons.SET
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
     else:
-      ret.cruiseState.available = (cruise_set_pressed or cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1 or self.cruise_buttons[-1] == Buttons.SET)
-      ret.cruiseState.enabled = (cp_cruise.vl["SCC12"]["ACCMode"] != 0 or self.cruise_buttons[-1] == Buttons.SET or cruise_set_pressed)
+      ret.cruiseState.available = (cruise_set_pressed or cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1 or self.cruise_buttons[-1] == Buttons.SET_DECEL)
+      ret.cruiseState.enabled = (cp_cruise.vl["SCC12"]["ACCMode"] != 0 or self.cruise_buttons[-1] == Buttons.SET_DECEL or cruise_set_pressed)
       ret.cruiseState.standstill = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 4.
       ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.  # Shows 'Cruise Control' on dash
       ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
-
-    
 
     # TODO: Find brake pressure
     ret.brake = 0
@@ -229,7 +227,7 @@ cruise_set_pressed = cp.vl["CLU11"]["CF_Clu_CruiseSwState"] == Buttons.SET
     else:
       cp_cruise_info = cp_cam if self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC else cp
       ret.cruiseState.enabled = (cp_cruise_info.vl["SCC_CONTROL"]["ACCMode"] in (1, 2) or
-                             self.cruise_buttons[-1] == Buttons.SET)
+                             self.cruise_buttons[-1] == Buttons.SET_DECEL)
       ret.cruiseState.standstill = cp_cruise_info.vl["SCC_CONTROL"]["CRUISE_STANDSTILL"] == 1
       ret.cruiseState.speed = cp_cruise_info.vl["SCC_CONTROL"]["VSetDis"] * speed_factor
       self.cruise_info = copy.copy(cp_cruise_info.vl["SCC_CONTROL"])
