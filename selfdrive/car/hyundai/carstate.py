@@ -116,8 +116,8 @@ class CarState(CarStateBase):
       ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
 
     # --- phr00t/Kona hack: car has no stock SCC, so always report cruise available ---
-    if self.CP.carFingerprint not in CAMERA_SCC_CAR and self.CP.carFingerprint not in CANFD_CAR:
-      ret.cruiseState.available = True
+    # if self.CP.carFingerprint not in CAMERA_SCC_CAR and self.CP.carFingerprint not in CANFD_CAR:
+    #  ret.cruiseState.available = True
 
     # TODO: Find brake pressure
     ret.brake = 0
@@ -254,9 +254,9 @@ class CarState(CarStateBase):
                                           else cp_cam.vl["CAM_0x2a4"])
     
     # --- phr00t/Kona hack: force cruise available on CAN FD cars without SCC ---
-    if self.CP.carFingerprint not in CAMERA_SCC_CAR:
-      ret.cruiseState.available = True
-    return ret
+    # if self.CP.carFingerprint not in CAMERA_SCC_CAR:
+    #  ret.cruiseState.available = True
+    # return ret
 
   def get_can_parser(self, CP):
     if CP.carFingerprint in CANFD_CAR:
