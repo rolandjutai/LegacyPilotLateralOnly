@@ -1,3 +1,15 @@
+This is my personal version of LegacyPilot. It works on unsupported cars without Active Cruise Control (ACC) by doing the following:
+1. Making sure that the Resume button on the steering wheel can enable OpenPilot lateral
+2. Making sure the cancel button can disable it
+3. By turning on the flag ALKAS (LKAS always on while main is on), it forces it on.
+
+However, you are still to select the most compatible car in the list in the menu, and preferably one tuned for your model. 
+This is helpful if your car is supported by OpenPilot but only supported if you opted for the car package with ACC. This way, any stock car can run OpenPilot and have a button to enable it.
+
+WARNING!!!! You should NOT use this fork if your car has ACC enabled, becuase the code is NOT SAFE for your car. You should go back to the original LegacyPilot branch. It also has a flag to have LKAS always on.
+
+Please note that you take all risks if you use this fork. As I said, safety checks are disabled and therefore OpenPilot will keep running in most situations.
+
 # Legacypilot
 
 This software includes contributions from [dragonpilot](https://github.com/dragonpilot-community/dragonpilot/tree/beta2) and [openpilot](https://github.com/commaai/openpilot).
