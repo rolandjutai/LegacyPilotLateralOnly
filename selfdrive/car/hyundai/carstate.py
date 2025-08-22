@@ -115,6 +115,10 @@ class CarState(CarStateBase):
       ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.  # Shows 'Cruise Control' on dash
       ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
 
+    # --- phr00t/Kona hack: car has no stock SCC, so always report cruise available ---
+    if self.CP.carFingerprint not in CAMERA_SCC_CAR and self.CP.carFingerprint not in CANFD_CAR:
+      ret.cruiseState.available = True
+
     # TODO: Find brake pressure
     ret.brake = 0
     ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2  # 2 includes regen braking by user on HEV/EV
@@ -248,7 +252,10 @@ class CarState(CarStateBase):
     if self.CP.flags & HyundaiFlags.CANFD_HDA2:
       self.hda2_lfa_block_msg = copy.copy(cp_cam.vl["CAM_0x362"] if self.CP.flags & HyundaiFlags.CANFD_HDA2_ALT_STEERING
                                           else cp_cam.vl["CAM_0x2a4"])
-
+    
+    # --- phr00t/Kona hack: force cruise available on CAN FD cars without SCC ---
+    if self.CP.carFingerprint not in CAMERA_SCC_CAR:
+      ret.cruiseState.available = True
     return ret
 
   def get_can_parser(self, CP):
