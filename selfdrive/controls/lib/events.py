@@ -618,7 +618,8 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
   },
 
   EventName.pedalPressed: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    # ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    # also now disabling it for brake events. Uncomment above line to re-enable break pedal to halt OP engagement
     # OPKR style: allow entry even if pedal pressed (esp. for gas override / LKAS only)
     # ET.NO_ENTRY: NoEntryAlert(_("Pedal Pressed"), visual_alert=VisualAlert.brakePressed),
   },
