@@ -598,7 +598,8 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
   },
 
   EventName.pcmDisable: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    # OPKR softer: don’t forcibly disengage, disable only if car truly demands
+    # ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
   },
 
   EventName.buttonCancel: {
@@ -618,8 +619,8 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
 
   EventName.pedalPressed: {
     ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
-    ET.NO_ENTRY: NoEntryAlert(_("Pedal Pressed"),
-                              visual_alert=VisualAlert.brakePressed),
+    # OPKR style: allow entry even if pedal pressed (esp. for gas override / LKAS only)
+    # ET.NO_ENTRY: NoEntryAlert(_("Pedal Pressed"), visual_alert=VisualAlert.brakePressed),
   },
 
   EventName.preEnableStandstill: {
@@ -647,8 +648,9 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
   },
 
   EventName.wrongCarMode: {
-    ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
-    ET.NO_ENTRY: wrong_car_mode_alert,
+    # OPKR: don’t block engagement for “wrong mode”
+    # ET.USER_DISABLE: EngagementAlert(AudibleAlert.disengage),
+    # ET.NO_ENTRY: wrong_car_mode_alert,
   },
 
   EventName.resumeBlocked: {
@@ -836,7 +838,7 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
 
   EventName.controlsMismatch: {
     ET.IMMEDIATE_DISABLE: ImmediateDisableAlert(_("Controls Mismatch")),
-    ET.NO_ENTRY: NoEntryAlert(_("Controls Mismatch")),
+    # OPKR: removed NO_ENTRY so mismatch only disengages while driving, not block enable
   },
 
   EventName.roadCameraError: {
