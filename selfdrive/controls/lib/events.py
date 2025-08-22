@@ -837,7 +837,7 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
   },
 
   EventName.controlsMismatch: {
-    ET.IMMEDIATE_DISABLE: ImmediateDisableAlert(_("Controls Mismatch")),
+    # ET.IMMEDIATE_DISABLE: ImmediateDisableAlert(_("Controls Mismatch")),
     # OPKR: removed NO_ENTRY so mismatch only disengages while driving, not block enable
   },
 
