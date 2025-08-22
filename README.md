@@ -1,7 +1,9 @@
+# PLEASE READ
+
 This is my personal version of LegacyPilot. It works on unsupported cars without Active Cruise Control (ACC) by doing the following:
 1. Making sure that the Resume button on the steering wheel can enable OpenPilot lateral
 2. Making sure the cancel button can disable it
-3. By turning on the flag ALKAS (LKAS always on while main is on), it forces it on.
+3. By turning on the flag ALKAS (LKAS always on while main is on), OpenPilot can run on unsupported cars, such as ones without ACC.
 
 However, you are still to select the most compatible car in the list in the menu, and preferably one tuned for your model. 
 This is helpful if your car is supported by OpenPilot but only supported if you opted for the car package with ACC. This way, any stock car can run OpenPilot and have a button to enable it.
