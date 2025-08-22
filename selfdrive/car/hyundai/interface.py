@@ -364,9 +364,9 @@ class CarInterface(CarInterfaceBase):
   
       # --- phr00t's SET_DECEL engage hack ---
       for b in ret.buttonEvents:
-        if b.type == ButtonType.decelCruise and not b.pressed:
-          if not self.CS.out.cruiseState.enabled:   # only if OP not already active
-            events.add(EventName.buttonEnable)
+        if b.type == ButtonType.decelCruise and b.pressed:
+            if not self.CS.out.cruiseState.enabled:   # only if OP not already active
+                events.add(EventName.buttonEnable)
   
       # low speed steer alert hysteresis logic
       if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
