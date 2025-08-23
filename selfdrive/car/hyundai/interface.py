@@ -354,6 +354,7 @@ class CarInterface(CarInterfaceBase):
     self.long_paused = False        # track gas‑pedal pause
     self.prev_gas_pressed = False
     self.prev_brake_pressed = False
+    self.smartcruise_active = False  # track if we are in SmartCruise mode
 
   # === NEW helper ===
   def _handle_pedals(self, CS, events):
@@ -395,37 +396,57 @@ class CarInterface(CarInterfaceBase):
     # Process button state machine
     for b in ret.buttonEvents:
 
-      # --- SET/-: engage lateral only ---
+      # --- SET/- pressed: engage stock SCC ---
       if b.type == ButtonType.decelCruise and b.pressed:
-        if not self.lat_active:
-          self.lat_active = True
-          events.add(EventName.buttonEnable)
+        if ret.cruiseState.available:  # cruise main ON
+          # Activate OEM stock cruise path
+          self.smartcruise_active = False
+          # normal lateral enable
+          if not self.lat_active:
+            self.lat_active = True
+            events.add(EventName.buttonEnable)
 
-      # --- RES/+: enable OP long if CRUISE is armed ---
+      # --- RES/+ pressed: enable SmartCruise if main is ON but stock not yet active ---
       if b.type == ButtonType.accelCruise and b.pressed:
-        if ret.cruiseState.available:    # stock cruise main ON
-          if not self.long_active:
+        if ret.cruiseState.available:
+          # Two cases:
+          if not ret.cruiseState.enabled:
+            # No stock SCC yet => start SmartCruise
+            self.smartcruise_active = True
             self.long_active = True
             events.add(EventName.buttonEnable)
           else:
-            # If already long and gas is/was pressed, RES = reset target = current speed
-            if self.long_paused or self.CS.gasPressed:
-              # flag special event for CarController to reset target speed
-              events.add(EventName.resumeRequired)
+            # Stock SCC is engaged. Pass RES through normally (do nothing special)
+            self.smartcruise_active = False
 
-      # --- CANCEL: kills both ---
+          # If already SmartCruise active and RES pressed while paused via gas:
+          if self.smartcruise_active and (self.long_paused or self.CS.gasPressed):
+            events.add(EventName.resumeRequired)
+
+      # --- CANCEL: cancels whichever mode is active ---
       if b.type == ButtonType.cancel and b.pressed:
         if self.lat_active or self.long_active:
           self.lat_active = False
           self.long_active = False
           self.long_paused = False
+          self.smartcruise_active = False
           events.add(EventName.buttonCancel)
 
-      # --- Turning Cruise MAIN off: kills long only ---
+      # --- Cruise MAIN off kills long only ---
       if not ret.cruiseState.available and self.long_active:
         self.long_active = False
         self.long_paused = False
-        # Do NOT cancel lateral, let steering persist
+        self.smartcruise_active = False
+        # do NOT cancel lateral
+
+        # Handle SmartCruise auto_cancel (keeps lateral ON)
+      if getattr(ret, 'auto_cancel', False):
+        if self.smartcruise_active:
+          self.long_active = False
+          self.long_paused = False
+          # DO NOT disable self.lat_active
+          # Clear flag so HUD/cruise state shows paused
+          ret.cruiseState.enabled = False
 
     # Low speed steer alert (stock code preserved)
     if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
@@ -451,4 +472,14 @@ class CarInterface(CarInterfaceBase):
     # propagate state machine flags into CarControl
     c.longActive = self.long_active
     c.longPaused = self.long_paused
-    return self.CC.update(c, self.CS, now_nanos)
+
+    if self.smartcruise_active:
+      # Call CarController with SmartCruise data
+      return self.CC.update(c, self.CS, now_nanos,
+                            self.sm['radarState'].leadOne,
+                            self.sm['lateralPlan'].curvatures,
+                            self.sm['longitudinalPlan'].stoplineProb)
+    else:
+      # Stock mode: SmartCruise inputs not used
+      return self.CC.update(c, self.CS, now_nanos,
+                            None, [], 0.0)
