@@ -435,6 +435,15 @@ class CarInterface(CarInterfaceBase):
     if self.low_speed_alert:
       events.add(car.CarEvent.EventName.belowSteerSpeed)
 
+     # === Add state display event for permanent HUD text ===
+    if self.lat_active:
+      if self.long_active and self.CP.openpilotLongitudinalControl:
+        events.add(EventName.latAndOpLongActive)
+      elif self.long_active and not self.CP.openpilotLongitudinalControl:
+        events.add(EventName.latAndStockLongActive)
+      else:
+        events.add(EventName.latOnlyActive)
+
     ret.events = events.to_msg()
     return ret
 
