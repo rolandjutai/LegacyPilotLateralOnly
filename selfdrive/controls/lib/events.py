@@ -335,7 +335,13 @@ def joystick_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster,
   vals = _("Gas: {gas_percent}%, Steer: {steer_percent}%").format(gas_percent=round(gb * 100.), steer_percent=round(steer * 100.))
   return NormalPermanentAlert(_("Joystick Mode"), vals)
 
+def lat_and_op_long_active_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int) -> Alert:
+  speed_txt = get_display_speed(CS.cruiseState.speed, metric)
+  return NormalPermanentAlert(_("LAT + SMART LONG ({speed})").format(speed=speed_txt), "")
 
+def lat_and_stock_long_active_alert(CP: car.CarParams, CS: car.CarState, sm: messaging.SubMaster, metric: bool, soft_disable_time: int) -> Alert:
+  speed_txt = get_display_speed(CS.cruiseState.speed, metric)
+  return NormalPermanentAlert(_("LAT + STOCK LONG ({speed})").format(speed=speed_txt), "")
 
 EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
   # ********** events with no alerts **********
@@ -427,13 +433,13 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
   },
 
   EventName.latOnlyActive: {
-    ET.PERMANENT: NormalPermanentAlert(_("LAT active"), ""),
+    ET.PERMANENT: NormalPermanentAlert(_("LAT ONLY"), ""),
   },
   EventName.latAndOpLongActive: {
-    ET.PERMANENT: NormalPermanentAlert(_("LAT + OP LONG active"), ""),
+    ET.PERMANENT: lat_and_op_long_active_alert,
   },
   EventName.latAndStockLongActive: {
-    ET.PERMANENT: NormalPermanentAlert(_("LAT + STOCK LONG active"), ""),
+    ET.PERMANENT: lat_and_stock_long_active_alert,
   },
 
   # ********** events only containing alerts that display while engaged **********
