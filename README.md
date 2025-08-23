@@ -24,6 +24,14 @@ RES / +	  ^While long already engaged	     ^Acts as “+” speed change (forwar
 SET / –	  ^While long engaged	             ^Acts as “–” speed change (forwarded directly to car)
 Stock Cruise OFF		                         ^Disables long only, lateral stays ON
 
+Net Effect
+
+- SET with Cruise OFF → OP steering only
+- CRUISE ON + SET → stock cruise speed engaged + OP lateral (stock does long).
+- RES when Cruise ON → engage OP long (button spam), replacing stock long.
+- CANCEL → stop everything (stock long, lateral and OP long).
+- Turning CRUISE MAIN off → cleanly drops OP long, OP lateral stays alive.
+
 # Legacypilot
 
 This software includes contributions from [dragonpilot](https://github.com/dragonpilot-community/dragonpilot/tree/beta2) and [openpilot](https://github.com/commaai/openpilot).
