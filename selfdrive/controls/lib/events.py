@@ -426,6 +426,16 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
       Priority.LOW, VisualAlert.ldw, AudibleAlert.prompt, 3.),
   },
 
+  EventName.latOnlyActive: {
+    ET.PERMANENT: NormalPermanentAlert(_("LAT active"), ""),
+  },
+  EventName.latAndOpLongActive: {
+    ET.PERMANENT: NormalPermanentAlert(_("LAT + OP LONG active"), ""),
+  },
+  EventName.latAndStockLongActive: {
+    ET.PERMANENT: NormalPermanentAlert(_("LAT + STOCK LONG active"), ""),
+  },
+
   # ********** events only containing alerts that display while engaged **********
 
   # openpilot tries to learn certain parameters about your car by observing
