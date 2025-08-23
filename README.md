@@ -12,6 +12,18 @@ WARNING!!!! You should NOT use this fork if your car has ACC enabled, becuase th
 
 Please note that you take all risks if you use this fork. As I said, safety checks are disabled and therefore OpenPilot will keep running in most situations.
 
+# LONG TESTING
+
+This branch is to test implementing the following logic. This is still working in progress until I update this... so not yet ready.
+
+Button	   ^ Condition	                     ^ Action
+SET / –	  ^ Anytime	                       ^ Engage LATERAL (steer) only
+CANCEL	   ^ Anytime                        ^	Disengage both lateral + long
+RES / +	  ^ Only if stock cruise is ON	    ^Engage LONG (button spam mode)
+RES / +	  ^While long already engaged	     ^Acts as “+” speed change (forwarded directly to car)
+SET / –	  ^While long engaged	             ^Acts as “–” speed change (forwarded directly to car)
+Stock Cruise OFF		                         ^Disables long only, lateral stays ON
+
 # Legacypilot
 
 This software includes contributions from [dragonpilot](https://github.com/dragonpilot-community/dragonpilot/tree/beta2) and [openpilot](https://github.com/commaai/openpilot).
