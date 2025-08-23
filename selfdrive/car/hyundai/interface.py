@@ -411,7 +411,7 @@ class CarInterface(CarInterfaceBase):
             # If already long and gas is/was pressed, RES = reset target = current speed
             if self.long_paused or self.CS.gasPressed:
               # flag special event for CarController to reset target speed
-              events.add(EventName.resumeCruise)
+              events.add(EventName.resumeRequired)
 
       # --- CANCEL: kills both ---
       if b.type == ButtonType.cancel and b.pressed:
