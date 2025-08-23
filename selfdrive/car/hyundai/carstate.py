@@ -51,6 +51,10 @@ class CarState(CarStateBase):
     self.cluster_speed_counter = CLUSTER_SAMPLE_RATE
 
     self.params = CarControllerParams(CP)
+    
+    # SmartCruise integration flags (fed from CarInterface/CarController)
+    self.smartcruise_active = False
+    self.auto_cancel = False
 
   def update(self, cp, cp_cam):
     if self.CP.carFingerprint in CANFD_CAR:
@@ -170,6 +174,9 @@ class CarState(CarStateBase):
     self.cruise_buttons.extend(cp.vl_all["CLU11"]["CF_Clu_CruiseSwState"])
     self.main_buttons.extend(cp.vl_all["CLU11"]["CF_Clu_CruiseSwMain"])
 
+    # SmartCruise integration
+    ret.smartcruiseEnabled = self.smartcruise_active
+    ret.autoCancel = self.auto_cancel
     return ret
 
   def update_canfd(self, cp, cp_cam):
@@ -256,7 +263,11 @@ class CarState(CarStateBase):
     # --- phr00t/Kona hack: force cruise available on CAN FD cars without SCC ---
     # if self.CP.carFingerprint not in CAMERA_SCC_CAR:
     #  ret.cruiseState.available = True
-    # return ret
+    
+    # SmartCruise integration
+    ret.smartcruiseEnabled = self.smartcruise_active
+    ret.autoCancel = self.auto_cancel
+    return ret
 
   def get_can_parser(self, CP):
     if CP.carFingerprint in CANFD_CAR:
