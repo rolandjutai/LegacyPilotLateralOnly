@@ -32,6 +32,28 @@ Net Effect
 - CANCEL → stop everything (stock long, lateral and OP long).
 - Turning CRUISE MAIN off → cleanly drops OP long, OP lateral stays alive.
 
+Why This Is Actually Elegant
+
+- Natural workflow: Your right thumb workflow feels “stock”: set cruise = speed hold, resume = add throttle, cancel = exit.
+- Dual mode tap‑into: You can stop at layer 1 (stock long, OP lat) when you just want reliable OEM cruise, or layer 2 (full OP longitudinal) when you want ACC features.
+- Safety layering: You always have two distinct kill switches: CANCEL for both, and CRUISE MAIN for long only.
+⚡ This is better than OPKR’s traditional combo‑tap design — it feels more OEM, while allowing to slip between lat‑only, lat + stock long, and lat + OP long cleanly and predictably.
+
+Pedals
+
+Brake:
+- Cancels OP Long.
+- Sends CANCEL to ECU.
+- Lateral unaffected.
+Gas press:
+- Suspends OP Long (button spamming stops).
+- Does NOT reset target speed.
+Gas release:
+- Resume OP Long at the last known OP target speed (planner‑based).
+- RES/+ behavior change while Gas is pressed (or within small window after release):
+- Overwrites OP Long’s target = current vEgo.
+- OP resumes spamming around that new target.
+
 # Legacypilot
 
 This software includes contributions from [dragonpilot](https://github.com/dragonpilot-community/dragonpilot/tree/beta2) and [openpilot](https://github.com/commaai/openpilot).
