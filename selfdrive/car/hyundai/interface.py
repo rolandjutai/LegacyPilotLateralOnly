@@ -458,11 +458,14 @@ class CarInterface(CarInterfaceBase):
 
      # === Add state display event for permanent HUD text ===
     if self.lat_active:
-      if self.long_active and self.CP.openpilotLongitudinalControl:
+      if self.long_active and self.smartcruise_active:
+        # SmartCruise engaged (lat + OP long path)
         events.add(EventName.latAndOpLongActive)
-      elif self.long_active and not self.CP.openpilotLongitudinalControl:
+      elif self.long_active and not self.smartcruise_active:
+        # Stock SCC engaged (lat + stock long path)
         events.add(EventName.latAndStockLongActive)
       else:
+        # Just lat only
         events.add(EventName.latOnlyActive)
 
     ret.events = events.to_msg()
