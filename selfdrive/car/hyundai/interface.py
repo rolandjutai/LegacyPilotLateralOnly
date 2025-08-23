@@ -346,38 +346,97 @@ class CarInterface(CarInterfaceBase):
     if CP.flags & HyundaiFlags.ENABLE_BLINKERS:
       disable_ecu(logcan, sendcan, bus=CanBus(CP).ECAN, addr=0x7B1, com_cont_req=b'\x28\x83\x01')
 
+# === NEW helper state ===
+  def __init__(self, CP, CarController, CarState):
+    super().__init__(CP, CarController, CarState)
+    self.long_active = False        # track if OP longitudinal is active
+    self.lat_active = False         # track if OP lateral is active
+    self.long_paused = False        # track gas‑pedal pause
+    self.prev_gas_pressed = False
+    self.prev_brake_pressed = False
+
+  # === NEW helper ===
+  def _handle_pedals(self, CS, events):
+    # Brake pedal = full long disengage (like CANCEL)
+    if CS.brakePressed and not self.prev_brake_pressed:
+      if self.long_active:
+        self.long_active = False
+        events.add(EventName.buttonCancel)
+    self.prev_brake_pressed = CS.brakePressed
+
+    # Gas pedal press = pause
+    if CS.gasPressed and not self.prev_gas_pressed:
+      if self.long_active:
+        self.long_paused = True
+    # Gas release = resume at old target (unless RES was used to set new target)
+    if not CS.gasPressed and self.prev_gas_pressed:
+      if self.long_active and self.long_paused:
+        # On release, just clear paused flag. OP Long resumes at stored target.
+        self.long_paused = False
+    self.prev_gas_pressed = CS.gasPressed
+  
+
+ # === REPLACEMENT ===
   def _update(self, c):
-      ret = self.CS.update(self.cp, self.cp_cam)
-  
-      if self.CS.CP.openpilotLongitudinalControl:
-        ret.buttonEvents = create_button_events(self.CS.cruise_buttons[-1],
-                                                self.CS.prev_cruise_buttons,
-                                                BUTTONS_DICT)
-      else:
-        ret.buttonEvents = create_button_events(self.CS.cruise_buttons[-1],
-                                                self.CS.prev_cruise_buttons,
-                                                BUTTONS_DICT)
-  
-      # By default, allow engagement on RES_ACCEL or main buttons
-      allow_enable = any(btn in (Buttons.RES_ACCEL,) for btn in self.CS.cruise_buttons) or any(self.CS.main_buttons)
-      events = self.create_common_events(ret, pcm_enable=self.CS.CP.pcmCruise, allow_enable=allow_enable)
-  
-      # --- phr00t's SET_DECEL engage hack ---
-      for b in ret.buttonEvents:
-        if b.type == ButtonType.decelCruise and b.pressed:
-            if not self.CS.out.cruiseState.enabled:   # only if OP not already active
-                events.add(EventName.buttonEnable)
-  
-      # low speed steer alert hysteresis logic
-      if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
-        self.low_speed_alert = True
-      if ret.vEgo > (self.CP.minSteerSpeed + 4.):
-        self.low_speed_alert = False
-      if self.low_speed_alert:
-        events.add(car.CarEvent.EventName.belowSteerSpeed)
-  
-      ret.events = events.to_msg()
-      return ret
+    ret = self.CS.update(self.cp, self.cp_cam)
+
+    # Always create button events
+    ret.buttonEvents = create_button_events(
+                          self.CS.cruise_buttons[-1],
+                          self.CS.prev_cruise_buttons,
+                          BUTTONS_DICT)
+
+    events = self.create_common_events(
+                ret, pcm_enable=self.CP.pcmCruise, allow_enable=False)
+
+    # Handle pedals (new function above)
+    self._handle_pedals(self.CS, events)
+
+    # Process button state machine
+    for b in ret.buttonEvents:
+
+      # --- SET/-: engage lateral only ---
+      if b.type == ButtonType.decelCruise and b.pressed:
+        if not self.lat_active:
+          self.lat_active = True
+          events.add(EventName.buttonEnable)
+
+      # --- RES/+: enable OP long if CRUISE is armed ---
+      if b.type == ButtonType.accelCruise and b.pressed:
+        if ret.cruiseState.available:    # stock cruise main ON
+          if not self.long_active:
+            self.long_active = True
+            events.add(EventName.buttonEnable)
+          else:
+            # If already long and gas is/was pressed, RES = reset target = current speed
+            if self.long_paused or self.CS.gasPressed:
+              # flag special event for CarController to reset target speed
+              events.add(EventName.resumeCruise)
+
+      # --- CANCEL: kills both ---
+      if b.type == ButtonType.cancel and b.pressed:
+        if self.lat_active or self.long_active:
+          self.lat_active = False
+          self.long_active = False
+          self.long_paused = False
+          events.add(EventName.buttonCancel)
+
+      # --- Turning Cruise MAIN off: kills long only ---
+      if not ret.cruiseState.available and self.long_active:
+        self.long_active = False
+        self.long_paused = False
+        # Do NOT cancel lateral, let steering persist
+
+    # Low speed steer alert (stock code preserved)
+    if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
+      self.low_speed_alert = True
+    if ret.vEgo > (self.CP.minSteerSpeed + 4.):
+      self.low_speed_alert = False
+    if self.low_speed_alert:
+      events.add(car.CarEvent.EventName.belowSteerSpeed)
+
+    ret.events = events.to_msg()
+    return ret
 
   def apply(self, c, now_nanos):
     return self.CC.update(c, self.CS, now_nanos)
