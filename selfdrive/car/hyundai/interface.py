@@ -439,4 +439,7 @@ class CarInterface(CarInterfaceBase):
     return ret
 
   def apply(self, c, now_nanos):
+    # propagate state machine flags into CarControl
+    c.longActive = self.long_active
+    c.longPaused = self.long_paused
     return self.CC.update(c, self.CS, now_nanos)
