@@ -115,8 +115,8 @@ struct CarEvent @0x9b1657f34caf3ad3 {
     resumeBlocked @113;
     steerTimeLimit @115;
     vehicleSensorsInvalid @116;
-    latOnlyActive @117;
     autoCancelActive @118;
+    latOnlyActive @119;
     radarCanErrorDEPRECATED @15;
     communityFeatureDisallowedDEPRECATED @62;
     radarCommIssueDEPRECATED @67;
