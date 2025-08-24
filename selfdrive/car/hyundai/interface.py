@@ -469,14 +469,17 @@ class CarInterface(CarInterfaceBase):
         self.smartcruise_active = False
         # do NOT cancel lateral
 
-        # Handle SmartCruise auto_cancel (keeps lateral ON)
-      if getattr(ret, 'auto_cancel', False):
-        if self.smartcruise_active:
-          self.long_active = False
-          self.long_paused = False
-          # DO NOT disable self.lat_active
-          # Clear flag so HUD/cruise state shows paused
-          ret.cruiseState.enabled = False
+      # --- Handle SmartCruise auto_cancel (keeps lateral ON, only suspends long) ---
+      if getattr(ret, 'auto_cancel', False) and self.smartcruise_active_last_cycle:
+        # Auto-cancel came from SmartCruiseController -> CarController set CS.auto_cancel
+        # Here we ONLY drop long, keeping lat enabled and CRUISE main still lit
+        self.long_active = False
+        self.long_paused = False
+        # Do NOT disable self.lat_active (steering continues)
+        # Clear flag so HUD/cruise state shows paused (no set speed)
+        ret.cruiseState.enabled = False
+        # NEW: notify driver
+        events.add(EventName.autoCancelActive)
 
     # Low speed steer alert (stock code preserved)
     if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
@@ -499,7 +502,9 @@ class CarInterface(CarInterfaceBase):
         events.add(EventName.latOnlyActive)
     if self.smartcruise_active:
       ret.cruiseState.speed = self.smartcruise_set_speed
-  
+
+    # Save last cycle state for edge-trigger detection
+    self.smartcruise_active_last_cycle = self.smartcruise_active
     ret.events = events.to_msg()
     return ret
 
