@@ -7,6 +7,7 @@ from openpilot.selfdrive.car import apply_driver_steer_torque_limits, common_fau
 from openpilot.selfdrive.car.hyundai import hyundaicanfd, hyundaican
 from openpilot.selfdrive.car.hyundai.hyundaicanfd import CanBus
 from openpilot.selfdrive.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CANFD_CAR, CAR
+from types import SimpleNamespace
 
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 LongCtrlState = car.CarControl.Actuators.LongControlState
@@ -150,11 +151,10 @@ class CarController:
     self.car_fingerprint = CP.carFingerprint
     self.last_button_frame = 0
 
-    # NEW: track OP long target speed
-    self.op_long_target_speed = 0.0
-
     #Instantiate SmartCruiseController once - rest is done in update
-    self.smartCruise = SmartCruiseController()   # instantiate once
+    # NEW: track OP long target speed
+    self.smartCruise = SmartCruiseController()
+    self.op_long_target_speed = 0.0   
 
   def update(self, CC, CS, now_nanos, lead_one, curvatures, stopline_prob):
     actuators = CC.actuators
@@ -187,40 +187,50 @@ class CarController:
 
     can_sends = []
 
+    # --- SmartCruise button spam (only when SmartCruise active and OP long is OFF) ---
+    if getattr(CS, 'smartcruise_active', False) and not self.CP.openpilotLongitudinalControl:
+      # Safe defaults
+      lead = lead_one if lead_one is not None else SimpleNamespace(modelProb=0.0, dRel=1e9, vRel=0.0)
+      curv = list(curvatures) if curvatures else []
+      stop_prob = float(stopline_prob) if stopline_prob is not None else 0.0
+
+      clu_speed = getattr(CS.out, 'vEgoCluster', CS.out.vEgo)            # m/s
+      current_cruise_speed = getattr(CS.out.cruiseState, 'speed', CS.out.vEgo)  # m/s
+      v_ego = CS.out.vEgo
+      gas = CS.out.gas
+      a_ego = CS.out.aEgo
+
     # We instantiated self.smartCruise = SmartCruiseController() in CarController.__init__(). Now each cycle we do:
-    cmds = self.smartCruise.update(CS.clu_speed,
-                               CS.current_cruise_speed,
-                               CS.out.vEgo,
-                               lead_one,
-                               curvatures,
-                               stopline_prob,
-                               CS.out.throttle,
-                               CS.out.aEgo)
+      cmds = self.smartCruise.update(
+        clu_speed,
+        current_cruise_speed,
+        v_ego,
+        lead,
+        curv,
+        stop_prob,
+        gas,
+        a_ego,
+      )
 
-    for cmd, auto_cancel in cmds:
-      if cmd == "RES_ACCEL":
-        can_sends.append(hyundaican.create_clu11(self.packer, self.frame,
-                                                 CS.clu11, Buttons.RES_ACCEL, self.CP.carFingerprint))
-      elif cmd == "SET_DECEL":
-        can_sends.append(hyundaican.create_clu11(self.packer, self.frame,
-                                                 CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
-      elif cmd == "CANCEL":
-        can_sends.append(hyundaican.create_clu11(self.packer, self.frame,
-                                                 CS.clu11, Buttons.CANCEL, self.CP.carFingerprint))
-        CS.auto_cancel = auto_cancel  # mark in CarState for Interface
-      
-      elif cmd == "SET":
-        can_sends.append(hyundaican.create_clu11(self.packer, self.frame,
-                                                 CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
+      for cmd, auto_cancel in cmds:
+        if cmd == "RES_ACCEL":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.RES_ACCEL, self.CP.carFingerprint))
+        elif cmd == "SET_DECEL":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
+        elif cmd == "CANCEL":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.CANCEL, self.CP.carFingerprint))
+          CS.auto_cancel = auto_cancel  # let interface consume next cycle
+        elif cmd == "SET":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
 
-    # --- after processing all cmds ---
-    if CS.auto_cancel:
-      # ensure it doesn't stick past this update
-      CS.auto_cancel = False
+     # DO NOT clear CS.auto_cancel here.
 
-    # --- Handle resumeRequired event (driver pressed RES while gas override) ---
-    if any(e.name == car.CarEvent.EventName.resumeRequired for e in CC.events):
-      self.op_long_target_speed = CS.out.vEgo
+      # Remove invalid CC.events usage
+      # if any(... in CC.events):
+
+    
+      #if any(e.name == car.CarEvent.EventName.resumeRequired for e in CC.events):
+      # self.op_long_target_speed = CS.out.vEgo
 
     # *** common hyundai stuff ***
 
