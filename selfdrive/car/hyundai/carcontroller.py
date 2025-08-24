@@ -208,9 +208,15 @@ class CarController:
         can_sends.append(hyundaican.create_clu11(self.packer, self.frame,
                                                  CS.clu11, Buttons.CANCEL, self.CP.carFingerprint))
         CS.auto_cancel = auto_cancel  # mark in CarState for Interface
+      
       elif cmd == "SET":
         can_sends.append(hyundaican.create_clu11(self.packer, self.frame,
                                                  CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
+
+    # --- after processing all cmds ---
+    if CS.auto_cancel:
+      # ensure it doesn't stick past this update
+      CS.auto_cancel = False
 
     # --- Handle resumeRequired event (driver pressed RES while gas override) ---
     if any(e.name == car.CarEvent.EventName.resumeRequired for e in CC.events):
