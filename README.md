@@ -12,17 +12,17 @@ WARNING!!!! You should NOT use this fork if your car has ACC enabled, becuase th
 
 Please note that you take all risks if you use this fork. As I said, safety checks are disabled and therefore OpenPilot will keep running in most situations.
 
-# LONG TESTING
+# SMART CRUISE CONTROL for Hyundai Only - new code path
 
-This branch is to test implementing the following logic. This is still working in progress until I update this... so not yet ready.
+This branch is to test implementing Smart Cruise Control using OpenPilot on Hyundais that only have non-smart cruise using the following logic. This is still working in progress until I update this... so not yet ready until folded into Main.
 
-Button	   ^ Condition	                     ^ Action
-SET / –	  ^ Anytime	                       ^ Engage LATERAL (steer) only
-CANCEL	   ^ Anytime                        ^	Disengage both lateral + long
-RES / +	  ^ Only if stock cruise is ON	    ^Engage LONG (button spam mode)
-RES / +	  ^While long already engaged	     ^Acts as “+” speed change (forwarded directly to car)
-SET / –	  ^While long engaged	             ^Acts as “–” speed change (forwarded directly to car)
-Stock Cruise OFF		                         ^Disables long only, lateral stays ON
+Button	   ^ Condition	                             ^ Action
+SET / –	  ^ Anytime	                               ^ Engage LATERAL (steer)
+CANCEL	   ^ Anytime                                ^	Disengage both lateral + SmartCruise LONG
+RES / +	  ^ Only if stock cruise is ON	            ^Engage SmartCruise LONG (button spam mode)
+RES / +	  ^ While SmartCruise already engaged	     ^Acts as “+” speed change (forwarded directly to car)
+SET / –	  ^ While long engaged	                    ^Acts as “–” speed change (forwarded directly to car)
+Stock Cruise OFF		                                 ^Disables long only, lateral stays ON
 
 Net Effect
 
