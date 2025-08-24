@@ -442,6 +442,14 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
     ET.PERMANENT: lat_and_stock_long_active_alert,
   },
 
+  EventName.autoCancelActive: {
+    ET.WARNING: Alert(
+      "SmartCruise Paused",
+      "Auto-cancel due to lead/cut-in",
+      AlertStatus.userPrompt, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.chimeDisable, 0., 2.),
+  },
+
   # ********** events only containing alerts that display while engaged **********
 
   # openpilot tries to learn certain parameters about your car by observing
