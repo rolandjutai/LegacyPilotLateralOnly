@@ -119,7 +119,6 @@ struct CarEvent @0x9b1657f34caf3ad3 {
     latOnlyActive @119;
     latAndOpLongActive @120;
     latAndStockLongActive @121;
-    latAndStockLongActive
     radarCanErrorDEPRECATED @15;
     communityFeatureDisallowedDEPRECATED @62;
     radarCommIssueDEPRECATED @67;
