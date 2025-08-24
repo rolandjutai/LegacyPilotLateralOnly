@@ -447,7 +447,7 @@ EVENTS: Dict[int, Dict[str, Union[Alert, AlertCallbackType]]] = {
       "SmartCruise Paused",
       "Auto-cancel due to lead/cut-in",
       AlertStatus.userPrompt, AlertSize.mid,
-      Priority.LOW, VisualAlert.none, AudibleAlert.chimeDisable, 0., 2.),
+      Priority.LOW, VisualAlert.none, AudibleAlert.disengage, 0., 2.),
   },
 
   # ********** events only containing alerts that display while engaged **********
