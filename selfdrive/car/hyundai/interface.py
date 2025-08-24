@@ -422,7 +422,7 @@ class CarInterface(CarInterfaceBase):
 
       # CANCEL
       if b.type == ButtonType.cancel and b.pressed:
-        if not ret.autoCancel:
+        if not getattr(self.CS, 'auto_cancel', False):
           if self.lat_active or self.long_active:
             self.lat_active = False
             self.long_active = False
@@ -442,7 +442,7 @@ class CarInterface(CarInterfaceBase):
       self.smartcruise_active = False
 
     # Handle SmartCruise auto_cancel (drop long, keep lat)
-    if ret.autoCancel and self.smartcruise_active_last_cycle:
+    if getattr(self.CS, 'auto_cancel', False) and self.smartcruise_active_last_cycle:
       self.long_active = False
       self.long_paused = False
       events.add(EventName.autoCancelActive)
