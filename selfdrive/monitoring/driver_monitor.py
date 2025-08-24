@@ -22,9 +22,9 @@ class DRIVER_MONITOR_SETTINGS():
     self._AWARENESS_TIME = 30. # passive wheeltouch total timeout
     self._AWARENESS_PRE_TIME_TILL_TERMINAL = 15.
     self._AWARENESS_PROMPT_TIME_TILL_TERMINAL = 6.
-    self._DISTRACTED_TIME = 11. # active monitoring total timeout
-    self._DISTRACTED_PRE_TIME_TILL_TERMINAL = 8.
-    self._DISTRACTED_PROMPT_TIME_TILL_TERMINAL = 6.
+    self._DISTRACTED_TIME = 80. # active monitoring total timeout
+    self._DISTRACTED_PRE_TIME_TILL_TERMINAL = 70.
+    self._DISTRACTED_PROMPT_TIME_TILL_TERMINAL = 60.
 
     self._FACE_THRESHOLD = 0.7
     self._EYE_THRESHOLD = 0.65
@@ -38,11 +38,11 @@ class DRIVER_MONITOR_SETTINGS():
     self._EE_THRESH21 = 0.01
     self._EE_THRESH22 = 0.35
 
-    self._POSE_PITCH_THRESHOLD = 0.3133
-    self._POSE_PITCH_THRESHOLD_SLACK = 0.3237
+    self._POSE_PITCH_THRESHOLD = 0.45
+    self._POSE_PITCH_THRESHOLD_SLACK = 0.50
     self._POSE_PITCH_THRESHOLD_STRICT = self._POSE_PITCH_THRESHOLD
-    self._POSE_YAW_THRESHOLD = 0.4020
-    self._POSE_YAW_THRESHOLD_SLACK = 0.5042
+    self._POSE_YAW_THRESHOLD = 0.60
+    self._POSE_YAW_THRESHOLD_SLACK = 0.70
     self._POSE_YAW_THRESHOLD_STRICT = self._POSE_YAW_THRESHOLD
     self._PITCH_NATURAL_OFFSET = 0.029 # initial value before offset is learned
     self._PITCH_NATURAL_THRESHOLD = 0.449
