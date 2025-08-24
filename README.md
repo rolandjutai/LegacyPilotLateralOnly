@@ -54,6 +54,94 @@ Gas release:
 - Overwrites OP Long’s target = current vEgo.
 - OP resumes spamming around that new target.
 
+# ChatGPT Summary of CodePaths and Behaviour
+
+This might illuminate the code a bit more for people who want to understand exact behaviour
+
+## 🚦 Button Handling Truth Table
+
+Legend:  
+- **Lat** → Lateral (steering) active/inactive.  
+- **Stock CC** → OEM dumb CC engaged.  
+- **SmartCruise** → OP long enabled.  
+- **HUD** → Which event is posted to display.  
+
+---
+
+### 1. CRUISE MAIN OFF (green icon off)
+
+| Button | SmartCruise | Current State | Outcome |
+|--------|-------------|---------------|---------|
+| **SET (–)** | irrelevant | no cruise | Enables **lat‑only** (steer), posts `buttonEnable`. Stock CC does nothing. |
+| **RES (+)** | irrelevant | no cruise | Ignored (since cruise not available). |
+| **CANCEL**  | any        | lat only    | Kills lat+long, resets SmartCruise flags. |
+| **MAIN off event** | any | any         | Already OFF → no change. |
+
+✅ Good: with MAIN OFF, only lat enable/disable works. Car ignores SET/RES.
+
+---
+
+### 2. CRUISE MAIN ON, **no cruise engaged yet** (dash shows “CRUISE,” not SET)
+
+| Button | SmartCruise Active? | Outcome |
+|--------|---------------------|---------|
+| **SET (–)** | False | → **Stock CC engage** (dumb cruise takes over throttle). Lat enabled too. HUD = lat+stock long. |
+| **SET (–)** | True (shouldn’t happen here, but if forced) | Would decrement SmartCruise target once gas released. |
+| **RES (+)** | False | → **Engage SmartCruise**: `smartcruise_active=True`, fake SET injected so ECU shows engaged, HUD = lat+op long. |
+| **RES (+)** | True | Would go to Case 2 (increment target). |
+| **CANCEL** | Any | Cancels lat+long. |
+| **MAIN OFF** | Any | Cancels long/smart, leaves lat. |
+
+✅ Good: this is the fork point — **SET first → stock CC, RES first → SmartCruise**.
+
+---
+
+### 3. CRUISE MAIN ON, **Stock CC active** (OEM engaged, target held)
+
+| Button | SmartCruise Active | Outcome |
+|--------|--------------------|---------|
+| **SET (–)** | False | → Standard stock SET behavior (decrement/set to new speed). Lat stays on. |
+| **RES (+)** | False | → Stock CC resume (handled by ECU). |
+| **CANCEL** | False | Kill lat+long. |
+| **RES/SET** | True (shouldn’t happen) | FSM prevents this b/c SmartCruise never activates on top of stock. |
+
+✅ Good: if the driver started stock cruise, OP lets stock ECU handle long.
+
+---
+
+### 4. CRUISE MAIN ON, **SmartCruise active** (lat + OP long)
+
+| Button | Action |
+|--------|--------|
+| **SET (–)** | If gas pressed → reset target to vEgo. Else → decrement SmartCruise target by 1 kph. |
+| **RES (+)** | Increment SmartCruise target by 1 kph. (Case 2) |
+| **CANCEL** | Cancels both lat+long+SmartCruise flags. |
+| **MAIN OFF** | Drops out long/SmartCruise, keeps lat if active. |
+| **auto_cancel** | Same: disables long but leaves lat. |
+
+✅ Good: SmartCruise owns the buttons, they only adjust OP target.
+
+---
+
+## 5. HUD / Event Mapping
+
+- **Lat + SmartCruise** = `latAndOpLongActive`  
+- **Lat + Stock CC** = `latAndStockLongActive`  
+- **Lat only** = `latOnlyActive`  
+- If nothing active, no HUD events.
+
+---
+
+## ✨ TL;DR
+
+- **SET first (MAIN ON)** = Stock CC (lat+stock).  
+- **RES first (MAIN ON)** = SmartCruise (lat+OP long, fake SET inject).  
+- **MAIN off** = drops long, keeps lat.  
+- **CANCEL** = kills all.  
+- **Buttons adapt correctly depending on whether SmartCruise is active or not.**
+
+✅ This matches exactly what you want on a dumb‑CC Kona.
+
 # Legacypilot
 
 This software includes contributions from [dragonpilot](https://github.com/dragonpilot-community/dragonpilot/tree/beta2) and [openpilot](https://github.com/commaai/openpilot).
