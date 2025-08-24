@@ -42,95 +42,76 @@ from collections import deque
 import time
 
 class SmartCruiseController:
-  """
-  An add-on layer that emulates Vision-based Adaptive Cruise
-  by spamming cruise buttons (SET/RES) or issuing CANCEL/SET
-  to accelerate slowdown when needed.
-
-  - Reads vision lead data (from radarState.leadOne)
-  - Reads curvature (from lateralPlan.curvatures)
-  - Outputs a list of (button presses) or CANCEL/RESUME
-  """
-  def __init__(self):
-    self.desired_speed = None
-    self.last_target_speed = None
-    self.cancel_active = False
-    self.cancel_time = 0.0
-    self.last_button_time = 0.0
-    self.speed_error_buffer = deque(maxlen=50)  # 1s averaging at 50Hz
-    self.auto_resume_guard = 1.5
-    self.last_resume_time = 0.0
-    self.auto_cancel_flag = False   # distinguish driver cancel vs auto cancel
-
-  def update(self, clu_speed, current_cruise_speed, v_ego,
-             lead, curvature, stop_prob, throttle_cmd, accel_ego):
+  def update(self, clu_speed_mps, current_cruise_speed_mps, v_ego_mps,
+             lead, curvature, stop_prob, gas_cmd, accel_ego):
 
     now = time.monotonic()
     can_cmds = []
 
-    # --- Base desired speed ---
-    target_speed = current_cruise_speed
+    # Convert to kph for heuristic thresholds
+    clu_kph = clu_speed_mps * CV.MS_TO_KPH
+    cruise_kph = current_cruise_speed_mps * CV.MS_TO_KPH
+    v_kph = v_ego_mps * CV.MS_TO_KPH
+
+    # --- Base desired speed (m/s) ---
+    target_speed_mps = current_cruise_speed_mps
 
     # Lead vehicle adjustment
-    if lead.modelProb > 0.5 and lead.dRel > 0:
-      time_gap = lead.dRel / max(v_ego, 0.1)
+    if getattr(lead, 'modelProb', 0.0) > 0.5 and getattr(lead, 'dRel', 1e9) > 0:
+      time_gap = lead.dRel / max(v_ego_mps, 0.1)
       if time_gap < 1.2:
-        target_speed = min(target_speed, v_ego + lead.vRel - 5)
+        target_speed_mps = min(target_speed_mps, v_ego_mps + lead.vRel - 5.0)  # vRel is m/s
 
-    # Curve adjustment (only for sharp curves)
+    # Curve adjustment (curvature in 1/m, thresholds tuned empirically)
     if curvature:
       curv_max = max(abs(c) for c in curvature[len(curvature)//2:])
-      if (v_ego < 80 and curv_max > 0.02) or (v_ego >= 80 and curv_max > 0.03):
-        curve_limit = max(30.0, v_ego * (0.8 / (curv_max*100)))
-        target_speed = min(target_speed, curve_limit)
+      if (v_kph < 80.0 and curv_max > 0.02) or (v_kph >= 80.0 and curv_max > 0.03):
+        curve_limit_kph = max(30.0, v_kph * (0.8 / (curv_max * 100.0)))
+        target_speed_mps = min(target_speed_mps, curve_limit_kph * CV.KPH_TO_MS)
 
     # Stop line adjustment
-    if stop_prob > 0.7 and v_ego < 45:
-      target_speed = 0.0
+    if stop_prob > 0.7 and v_kph < 45.0:
+      target_speed_mps = 0.0
 
-    # Hill bias correction
-    self.speed_error_buffer.append(clu_speed - current_cruise_speed)
+    # Hill bias correction (compare bias in kph)
+    self.speed_error_buffer.append(clu_speed_mps - current_cruise_speed_mps)
     if len(self.speed_error_buffer) == self.speed_error_buffer.maxlen:
-      avg_bias = sum(self.speed_error_buffer)/len(self.speed_error_buffer)
-      if avg_bias < -2.0:   # undershooting uphill
-        target_speed += 2.0
-      elif avg_bias > 2.0:  # overshooting downhill
-        target_speed -= 2.0
+      avg_bias_kph = (sum(self.speed_error_buffer) / len(self.speed_error_buffer)) * CV.MS_TO_KPH
+      if avg_bias_kph < -2.0:   # undershooting uphill
+        target_speed_mps += 2.0 * CV.KPH_TO_MS
+      elif avg_bias_kph > 2.0:  # overshooting downhill
+        target_speed_mps -= 2.0 * CV.KPH_TO_MS
 
-    # Smoothing
-    if self.last_target_speed is None:
-      smoothed = target_speed
-    else:
-      smoothed = 0.7*self.last_target_speed + 0.3*target_speed
-
+    # Smoothing (in m/s)
+    smoothed = target_speed_mps if self.last_target_speed is None else 0.7 * self.last_target_speed + 0.3 * target_speed_mps
     self.last_target_speed = smoothed
     self.desired_speed = smoothed
 
-    # --- Decide button actions ---
-    diff = self.desired_speed - current_cruise_speed
+    # --- Decide button actions in 1 kph quanta ---
+    diff_kph = (self.desired_speed - current_cruise_speed_mps) * CV.MS_TO_KPH
 
     # Emergency auto-cancel
-    urgent = (diff < -10) or (lead.modelProb > 0.5 and lead.dRel < 6 and lead.vRel < -5)
+    urgent = (diff_kph < -10.0) or (getattr(lead, 'modelProb', 0.0) > 0.5 and getattr(lead, 'dRel', 1e9) < 6.0 and getattr(lead, 'vRel', 0.0) < -5.0)
     if urgent and not self.cancel_active:
-      can_cmds.append(("CANCEL", True))   # (command, auto_cancel_flag)
+      can_cmds.append(("CANCEL", True))
       self.cancel_active = True
       self.cancel_time = now
       self.auto_cancel_flag = True
       return can_cmds
 
-    # While canceled
+    # While canceled, auto-resume when near target
     if self.cancel_active:
-      if v_ego <= self.desired_speed+1.0 and (now - self.cancel_time) > self.auto_resume_guard:
+      if v_ego_mps <= self.desired_speed + 1.0 and (now - self.cancel_time) > self.auto_resume_guard:
         can_cmds.append(("SET", True))
         self.cancel_active = False
         self.auto_cancel_flag = False
       return can_cmds
 
-    # Normal fine-tuning
-    if abs(diff) >= 1.0:
-      if now - self.last_button_time > 0.3:  # 3 Hz max
-        presses = min(4, int(abs(diff)))
-        button = "RES_ACCEL" if diff > 0 else "SET_DECEL"
+    # Normal fine-tuning: 1 press per kph, max 4 every ~0.3s
+    if abs(diff_kph) >= 1.0:
+      if now - self.last_button_time > 0.3:
+        presses = min(4, int(abs(diff_kph)))
+        button = "RES_ACCEL" if diff_kph > 0 else "SET_DECEL"
         for _ in range(presses):
           can_cmds.append((button, False))
         self.last_button_time = now
