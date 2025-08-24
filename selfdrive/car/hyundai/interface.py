@@ -355,6 +355,7 @@ class CarInterface(CarInterfaceBase):
     self.prev_gas_pressed = False
     self.prev_brake_pressed = False
     self.smartcruise_active = False  # track if we are in SmartCruise mode
+    self.smartcruise_set_speed = 0.0   # virtual target speed managed by SmartCruise
 
   # === NEW helper ===
   def _handle_pedals(self, CS, events):
@@ -396,30 +397,54 @@ class CarInterface(CarInterfaceBase):
     # Process button state machine
     for b in ret.buttonEvents:
 
-      # --- SET/- pressed: engage stock SCC ---
+      # --- SET/- pressed ---
       if b.type == ButtonType.decelCruise and b.pressed:
-        if ret.cruiseState.available:  # cruise main ON
-          # Activate OEM stock cruise path
-          self.smartcruise_active = False
-          # normal lateral enable
+        if not ret.cruiseState.available:
+          # Cruise main OFF → LAT-only enable
           if not self.lat_active:
             self.lat_active = True
             events.add(EventName.buttonEnable)
+      
+        else:
+          # Cruise main ON (green light)
+          if self.smartcruise_active:
+            # SmartCruise is running
+            if self.CS.gasPressed:
+              # Gas override → reset new target to current ego speed
+              self.smartcruise_set_speed = max(0.0, ret.vEgo)
+            else:
+              # Normal SET → decrement SmartCruise target speed
+              self.smartcruise_set_speed = max(0.0, self.smartcruise_set_speed - (1.0 * CV.KPH_TO_MS))
+      
+          else:
+            # SmartCruise is not active
+            # → fall back to OEM stock SCC enable
+            self.smartcruise_active = False
+            if not self.lat_active:
+              self.lat_active = True
+              events.add(EventName.buttonEnable)
+            # Stock SCC handles its own target
 
-      # --- RES/+ pressed: enable SmartCruise if main is ON but stock not yet active ---
+      # --- RES/+ pressed: enable SmartCruise or increment target speed ---
       if b.type == ButtonType.accelCruise and b.pressed:
         if ret.cruiseState.available:
-          # Two cases:
-          if not ret.cruiseState.enabled:
-            # No stock SCC yet => start SmartCruise
+      
+          # Case 1: Cruise main ON, stock SCC not active, SmartCruise not active -> Engage SmartCruise
+          if not ret.cruiseState.enabled and not self.smartcruise_active:
             self.smartcruise_active = True
             self.long_active = True
             events.add(EventName.buttonEnable)
+            self.smartcruise_set_speed = max(0.0, ret.vEgo)
+      
+          # Case 2: SmartCruise already active -> increment target
+          elif self.smartcruise_active:
+            self.smartcruise_set_speed += (1.0 * CV.KPH_TO_MS)
+      
+          # Case 3: Stock SCC running -> pass RES through normally (do nothing)
           else:
-            # Stock SCC is engaged. Pass RES through normally (do nothing special)
-            self.smartcruise_active = False
-
-          # If already SmartCruise active and RES pressed while paused via gas:
+            pass  # leave SmartCruise inactive
+      
+          # Case 4: Resume logic for SmartCruise
           if self.smartcruise_active and (self.long_paused or self.CS.gasPressed):
             events.add(EventName.resumeRequired)
 
@@ -467,7 +492,9 @@ class CarInterface(CarInterfaceBase):
       else:
         # Just lat only
         events.add(EventName.latOnlyActive)
-
+    if self.smartcruise_active:
+      ret.cruiseState.speed = self.smartcruise_set_speed
+  
     ret.events = events.to_msg()
     return ret
 
