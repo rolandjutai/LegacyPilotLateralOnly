@@ -1,5 +1,5 @@
 from cereal import car
-from cereal import cereal.messaging as messaging
+import cereal.messaging as messaging
 from panda import Panda
 from openpilot.common.conversions import Conversions as CV
 from openpilot.selfdrive.car.hyundai.hyundaicanfd import CanBus
@@ -413,8 +413,8 @@ class CarInterface(CarInterfaceBase):
           events.add(EventName.buttonEnable)
           self.smartcruise_set_speed = max(0.0, ret.vEgo)
           # Inject a synthetic SET tap after the loop
-          pending_injected_button_events.append(car.CarState.ButtonEvent(type=ButtonType.decelCruise, pressed=True))
-          pending_injected_button_events.append(car.CarState.ButtonEvent(type=ButtonType.decelCruise, pressed=False))
+          pending_injected_button_events.append(car.CarState.ButtonEvent.new_message(type=ButtonType.decelCruise, pressed=True))
+          pending_injected_button_events.append(car.CarState.ButtonEvent.new_message(type=ButtonType.decelCruise, pressed=False))
         elif self.smartcruise_active:
           self.smartcruise_set_speed += (1.0 * CV.KPH_TO_MS)
         if self.smartcruise_active and (self.long_paused or self.CS.gasPressed):
@@ -478,13 +478,18 @@ class CarInterface(CarInterfaceBase):
     lead_one, curvatures, stopline_prob = None, [], 0.0
     if self.smartcruise_active:
       self.sm.update(0)
-      if self.sm.alive.get('radarState', False) and self.sm['radarState'].which() == 'leadOne':
-        lead_one = self.sm['radarState'].leadOne
+
+      if self.sm.alive.get('radarState', False):
+        rs = self.sm['radarState']
+        if hasattr(rs, 'leadOne'):
+          lead_one = rs.leadOne
+        elif hasattr(rs, 'leadsV3') and len(rs.leadsV3):
+          lead_one = rs.leadsV3[0]
+
       if self.sm.alive.get('lateralPlan', False):
         curvatures = list(self.sm['lateralPlan'].curvatures)
+
       if self.sm.alive.get('longitudinalPlan', False):
         stopline_prob = float(self.sm['longitudinalPlan'].stoplineProb)
 
     return self.CC.update(c, self.CS, now_nanos, lead_one, curvatures, stopline_prob)
-
-
