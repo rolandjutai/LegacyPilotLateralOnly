@@ -67,7 +67,10 @@ DP_VAG_TIMEBOMB_BYPASS_END = 348000
 
 class Controls:
   def __init__(self, sm=None, pm=None, can_sock=None, CI=None):
-    config_realtime_process(4 if TICI else 3, Priority.CTRL_HIGH)
+    try:
+      config_realtime_process(0, Priority.CTRL_HIGH)
+    except Exception as e:
+      print("Realtime config skipped:", e)
 
     self.dp_gps_ok_once = False
 
