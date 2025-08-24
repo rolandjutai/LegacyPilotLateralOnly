@@ -453,14 +453,17 @@ class CarInterface(CarInterfaceBase):
           if self.smartcruise_active and (self.long_paused or self.CS.gasPressed):
             events.add(EventName.resumeRequired)
 
-      # --- CANCEL: cancels whichever mode is active ---
+      # --- CANCEL pressed ---
       if b.type == ButtonType.cancel and b.pressed:
-        if self.lat_active or self.long_active:
-          self.lat_active = False
-          self.long_active = False
-          self.long_paused = False
-          self.smartcruise_active = False
-          events.add(EventName.buttonCancel)
+          # Only treat as *driver cancel* if not currently in SmartCruise auto_cancel
+          if not getattr(ret, 'auto_cancel', False):
+              if self.lat_active or self.long_active:
+                  self.lat_active = False
+                  self.long_active = False
+                  self.long_paused = False
+                  self.smartcruise_active = False
+                  events.add(EventName.buttonCancel)
+          # else: ignore, since auto_cancel handles it separately
 
       # --- Cruise MAIN off kills long only ---
       if not ret.cruiseState.available and self.long_active:
