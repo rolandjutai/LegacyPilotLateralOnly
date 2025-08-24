@@ -270,8 +270,8 @@ struct CarState {
   }
   
   # SmartCruise integration
-  smartcruiseEnabled @108 :Bool;  # true when SmartCruiseController is active
-  autoCancel         @109 :Bool;  # true when SmartCruise auto-cancel occurred
+  smartcruiseEnabled @48 :Bool;  # true when SmartCruiseController is active
+  autoCancel         @49 :Bool;  # true when SmartCruise auto-cancel occurred
 
   # deprecated
   errorsDEPRECATED @0 :List(CarEvent.EventName);
