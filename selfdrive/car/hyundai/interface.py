@@ -435,6 +435,11 @@ class CarInterface(CarInterfaceBase):
             self.long_active = True
             events.add(EventName.buttonEnable)
             self.smartcruise_set_speed = max(0.0, ret.vEgo)
+            # NEW: Pretend driver tapped SET once, to transition CC into engaged state
+            # IMPORTANT: inject a one-time synthetic SET tap so the car transitions into "engaged"
+            # This only runs once at SmartCruise activation because of the conditional above
+            ret.buttonEvents.append(car.CarState.ButtonEvent(type=ButtonType.decelCruise, pressed=True))
+            ret.buttonEvents.append(car.CarState.ButtonEvent(type=ButtonType.decelCruise, pressed=False))
       
           # Case 2: SmartCruise already active -> increment target
           elif self.smartcruise_active:
