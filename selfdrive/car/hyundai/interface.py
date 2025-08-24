@@ -483,6 +483,7 @@ class CarInterface(CarInterfaceBase):
         ret.cruiseState.enabled = False
         # NEW: notify driver
         events.add(EventName.autoCancelActive)
+        ret.auto_cancel = False
 
     # Low speed steer alert (stock code preserved)
     if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
