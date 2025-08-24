@@ -42,6 +42,17 @@ from collections import deque
 import time
 
 class SmartCruiseController:
+  def __init__(self):
+    self.desired_speed = None
+    self.last_target_speed = None
+    self.cancel_active = False
+    self.cancel_time = 0.0
+    self.last_button_time = 0.0
+    self.speed_error_buffer = deque(maxlen=50)  # ~1s at 50 Hz
+    self.auto_resume_guard = 1.5
+    self.last_resume_time = 0.0
+    self.auto_cancel_flag = False
+  
   def update(self, clu_speed_mps, current_cruise_speed_mps, v_ego_mps,
              lead, curvature, stop_prob, gas_cmd, accel_ego):
 
@@ -169,7 +180,7 @@ class CarController:
     can_sends = []
 
     # --- SmartCruise button spam (only when SmartCruise active and OP long is OFF) ---
-    if getattr(CS, 'smartcruise_active', False) and not self.CP.openpilotLongitudinalControl:
+    if getattr(CS, 'smartcruise_active', False) and not self.CP.openpilotLongitudinalControl and (self.CP.carFingerprint not in CANFD_CAR):
       # Safe defaults
       lead = lead_one if lead_one is not None else SimpleNamespace(modelProb=0.0, dRel=1e9, vRel=0.0)
       curv = list(curvatures) if curvatures else []
