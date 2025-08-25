@@ -115,7 +115,7 @@ class CarState(CarStateBase):
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
     else:
-      force_no_scc = (self.CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+      force_no_scc = self.force_no_scc
       if force_no_scc:
         # Kona (no SCC): always report cruise available to allow lateral; enabled only on SET press
         ret.cruiseState.available = True
@@ -165,7 +165,7 @@ class CarState(CarStateBase):
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
     if not self.CP.openpilotLongitudinalControl:
-      force_no_scc = (self.CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+      force_no_scc = self.force_no_scc
       if force_no_scc:
         ret.stockFcw = False
         ret.stockAeb = False
@@ -298,7 +298,7 @@ class CarState(CarStateBase):
       ("SAS11", 100),
     ]
 
-    force_no_scc = (CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+    force_no_scc = self.force_no_scc
     if not CP.openpilotLongitudinalControl and CP.carFingerprint not in CAMERA_SCC_CAR and not force_no_scc:
       messages += [
         ("SCC11", 50),
