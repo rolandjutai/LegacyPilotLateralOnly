@@ -1,4 +1,5 @@
 from cereal import car
+import cereal.messaging as messaging
 from panda import Panda
 from openpilot.common.conversions import Conversions as CV
 from openpilot.selfdrive.car.hyundai.hyundaicanfd import CanBus
@@ -346,38 +347,140 @@ class CarInterface(CarInterfaceBase):
     if CP.flags & HyundaiFlags.ENABLE_BLINKERS:
       disable_ecu(logcan, sendcan, bus=CanBus(CP).ECAN, addr=0x7B1, com_cont_req=b'\x28\x83\x01')
 
-  def _update(self, c):
-      ret = self.CS.update(self.cp, self.cp_cam)
-  
-      if self.CS.CP.openpilotLongitudinalControl:
-        ret.buttonEvents = create_button_events(self.CS.cruise_buttons[-1],
-                                                self.CS.prev_cruise_buttons,
-                                                BUTTONS_DICT)
-      else:
-        ret.buttonEvents = create_button_events(self.CS.cruise_buttons[-1],
-                                                self.CS.prev_cruise_buttons,
-                                                BUTTONS_DICT)
-  
-      # By default, allow engagement on RES_ACCEL or main buttons
-      allow_enable = any(btn in (Buttons.RES_ACCEL,) for btn in self.CS.cruise_buttons) or any(self.CS.main_buttons)
-      events = self.create_common_events(ret, pcm_enable=self.CS.CP.pcmCruise, allow_enable=allow_enable)
-  
-      # --- phr00t's SET_DECEL engage hack ---
-      for b in ret.buttonEvents:
-        if b.type == ButtonType.decelCruise and b.pressed:
-            if not self.CS.out.cruiseState.enabled:   # only if OP not already active
-                events.add(EventName.buttonEnable)
-  
-      # low speed steer alert hysteresis logic
-      if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
-        self.low_speed_alert = True
-      if ret.vEgo > (self.CP.minSteerSpeed + 4.):
-        self.low_speed_alert = False
-      if self.low_speed_alert:
-        events.add(car.CarEvent.EventName.belowSteerSpeed)
-  
-      ret.events = events.to_msg()
-      return ret
+    # === NEW helper state ===
+  def __init__(self, CP, CarController, CarState):
+    super().__init__(CP, CarController, CarState)
+    self.long_active = False
+    self.lat_active = False
+    self.long_paused = False
+    self.prev_gas_pressed = False
+    self.prev_brake_pressed = False
+    self.smartcruise_active = False
+    self.smartcruise_set_speed = 0.0
 
-  def apply(self, c, now_nanos):
-    return self.CC.update(c, self.CS, now_nanos)
+    # SmartCruise runtime/alert helpers
+    self.low_speed_alert = False
+    self.smartcruise_active_last_cycle = False
+
+    # SubMaster for planner/lead inputs (only used when SmartCruise active)
+    self.sm = messaging.SubMaster(['radarState', 'lateralPlan', 'longitudinalPlan'])
+
+  def _update(self, c):
+    # propagate FSM flags into CarState before parsing
+    self.CS.smartcruise_active = self.smartcruise_active
+    ret = self.CS.update(self.cp, self.cp_cam)
+  
+    # Always create button events
+    ret.buttonEvents = create_button_events(
+      self.CS.cruise_buttons[-1],
+      self.CS.prev_cruise_buttons,
+      BUTTONS_DICT
+    )
+  
+    events = self.create_common_events(ret, pcm_enable=self.CP.pcmCruise, allow_enable=False)
+  
+    # pedals
+    self._handle_pedals(self.CS, events)
+  
+    # Avoid mutating while iterating
+    pending_injected_button_events = []
+  
+    for b in ret.buttonEvents:
+      # SET/-
+      if b.type == ButtonType.decelCruise and b.pressed:
+        if not ret.cruiseState.available:
+          if not self.lat_active:
+            self.lat_active = True
+            events.add(EventName.buttonEnable)
+        else:
+          if self.smartcruise_active:
+            if self.CS.gasPressed:
+              self.smartcruise_set_speed = max(0.0, ret.vEgo)
+            else:
+              self.smartcruise_set_speed = max(0.0, self.smartcruise_set_speed - (1.0 * CV.KPH_TO_MS))
+          else:
+            if not self.lat_active:
+              self.lat_active = True
+              events.add(EventName.buttonEnable)
+  
+      # RES/+
+      if b.type == ButtonType.accelCruise and b.pressed and ret.cruiseState.available:
+        if not ret.cruiseState.enabled and not self.smartcruise_active:
+          self.smartcruise_active = True
+          self.long_active = True
+          events.add(EventName.buttonEnable)
+          self.smartcruise_set_speed = max(0.0, ret.vEgo)
+          # Inject a synthetic SET tap after the loop (used by downstream logic)
+          pending_injected_button_events.append(car.CarState.ButtonEvent.new_message(type=ButtonType.decelCruise, pressed=True))
+          pending_injected_button_events.append(car.CarState.ButtonEvent.new_message(type=ButtonType.decelCruise, pressed=False))
+        elif self.smartcruise_active:
+          self.smartcruise_set_speed += (1.0 * CV.KPH_TO_MS)
+        if self.smartcruise_active and (self.long_paused or self.CS.gasPressed):
+          events.add(EventName.resumeRequired)
+  
+      # CANCEL
+      if b.type == ButtonType.cancel and b.pressed:
+        if not getattr(self.CS, 'auto_cancel', False):
+          if self.lat_active or self.long_active:
+            self.lat_active = False
+            self.long_active = False
+            self.long_paused = False
+            self.smartcruise_active = False
+            events.add(EventName.buttonCancel)
+        # else: ignore (auto-cancel path handles it)
+  
+    # Append injected events after processing loop
+    if pending_injected_button_events:
+      ret.buttonEvents.extend(pending_injected_button_events)
+  
+    # MAIN off kills long only
+    if not ret.cruiseState.available and self.long_active:
+      self.long_active = False
+      self.long_paused = False
+      self.smartcruise_active = False
+  
+    # Handle SmartCruise auto_cancel (drop long, keep lat)
+    if getattr(self.CS, 'auto_cancel', False) and self.smartcruise_active_last_cycle:
+      self.long_active = False
+      self.long_paused = False
+      events.add(EventName.resumeRequired)
+      # clear backing flag for next cycle
+      self.CS.auto_cancel = False
+  
+    # Low speed steer alert (unchanged)
+    if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
+      self.low_speed_alert = True
+    if ret.vEgo > (self.CP.minSteerSpeed + 4.):
+      self.low_speed_alert = False
+    if self.low_speed_alert:
+      events.add(car.CarEvent.EventName.belowSteerSpeed)
+  
+    # SmartCruise target on HUD speed field (capnp-safe)
+    if self.smartcruise_active:
+      ret.cruiseState.speed = self.smartcruise_set_speed
+  
+    self.smartcruise_active_last_cycle = self.smartcruise_active
+    ret.events = events.to_msg()
+    return ret
+
+   def apply(self, c, now_nanos):
+    # Feed planner/lead to controller only when SmartCruise is active
+    lead_one, curvatures, stopline_prob = None, [], 0.0
+    if self.smartcruise_active:
+      self.sm.update(0)
+  
+      if self.sm.alive.get('radarState', False):
+        rs = self.sm['radarState']
+        if hasattr(rs, 'leadOne'):
+          lead_one = rs.leadOne
+        elif hasattr(rs, 'leadsV3') and len(rs.leadsV3):
+          lead_one = rs.leadsV3[0]
+  
+      if self.sm.alive.get('lateralPlan', False):
+        curvatures = list(self.sm['lateralPlan'].curvatures)
+  
+      if self.sm.alive.get('longitudinalPlan', False):
+        stopline_prob = float(self.sm['longitudinalPlan'].stoplineProb)
+  
+    return self.CC.update(c, self.CS, now_nanos, lead_one, curvatures, stopline_prob)
+     
