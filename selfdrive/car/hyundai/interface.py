@@ -471,24 +471,24 @@ class CarInterface(CarInterfaceBase):
     ret.events = events.to_msg()
     return ret
 
-   def apply(self, c, now_nanos):
+  def apply(self, c, now_nanos):
     # Feed planner/lead to controller only when SmartCruise is active
     lead_one, curvatures, stopline_prob = None, [], 0.0
     if self.smartcruise_active:
       self.sm.update(0)
-  
+
       if self.sm.alive.get('radarState', False):
         rs = self.sm['radarState']
         if hasattr(rs, 'leadOne'):
           lead_one = rs.leadOne
         elif hasattr(rs, 'leadsV3') and len(rs.leadsV3):
           lead_one = rs.leadsV3[0]
-  
+
       if self.sm.alive.get('lateralPlan', False):
         curvatures = list(self.sm['lateralPlan'].curvatures)
-  
+
       if self.sm.alive.get('longitudinalPlan', False):
         stopline_prob = float(self.sm['longitudinalPlan'].stoplineProb)
-  
+
     return self.CC.update(c, self.CS, now_nanos, lead_one, curvatures, stopline_prob)
      
