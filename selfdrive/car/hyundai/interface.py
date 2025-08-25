@@ -383,7 +383,7 @@ class CarInterface(CarInterfaceBase):
     events = self.create_common_events(
       ret,
       pcm_enable=self.CP.pcmCruise,
-      allow_enable=(self.lat_active or set_pressed_this_cycle or ret.cruiseState.available)
+      allow_enable=set_pressed_this_cycle
     )
   
     # pedals
@@ -399,7 +399,6 @@ class CarInterface(CarInterfaceBase):
         if not ret.cruiseState.available:
           if not self.lat_active:
             self.lat_active = True
-            events.add(EventName.buttonEnable)
         else:
           if self.smartcruise_active:
             if self.CS.gasPressed:
@@ -409,14 +408,12 @@ class CarInterface(CarInterfaceBase):
           else:
             if not self.lat_active:
               self.lat_active = True
-              events.add(EventName.buttonEnable)
   
       # RES/+
       if b.type == ButtonType.accelCruise and b.pressed and ret.cruiseState.available:
         if not ret.cruiseState.enabled and not self.smartcruise_active:
           self.smartcruise_active = True
           self.long_active = True
-          events.add(EventName.buttonEnable)
           self.smartcruise_set_speed = max(0.0, ret.vEgo)
           # Inject a synthetic SET tap after the loop (used by downstream logic)
           pending_injected_button_events.append(car.CarState.ButtonEvent.new_message(type=ButtonType.decelCruise, pressed=True))
