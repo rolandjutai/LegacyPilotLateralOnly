@@ -387,7 +387,8 @@ class CarInterface(CarInterfaceBase):
     )
   
     # pedals
-    self._handle_pedals(self.CS, events)
+    if hasattr(self, "_handle_pedals"):
+      self._handle_pedals(self.CS, events)
   
     # Avoid mutating while iterating
     pending_injected_button_events = []
