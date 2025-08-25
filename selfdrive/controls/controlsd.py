@@ -214,6 +214,8 @@ class Controls:
     self.desired_curvature = 0.0
     self.desired_curvature_rate = 0.0
     self.experimental_mode = False
+    # User gate for lateral: armed on SET, cleared on CANCEL/disable
+    self.lat_user_enabled = False
     self.v_cruise_helper = VCruiseHelper(self.CP)
     self.recalibrating_seen = False
 
@@ -294,6 +296,13 @@ class Controls:
     resume_pressed = any(be.type in (ButtonType.accelCruise, ButtonType.resumeCruise) for be in CS.buttonEvents)
     if not self.CP.pcmCruise and not self.v_cruise_helper.v_cruise_initialized and resume_pressed:
       self.events.add(EventName.resumeBlocked)
+
+     # SET arms lateral, CANCEL disarms (press edges)
+    for be in CS.buttonEvents:
+      if be.pressed and be.type in (ButtonType.setCruise, ButtonType.decelCruise):
+        self.lat_user_enabled = True
+      if be.pressed and be.type in (ButtonType.cancel,):
+        self.lat_user_enabled = False
 
     # Disable on rising edge of accelerator or brake. Also disable on brake when speed > 0
     # Only applicable when openpilot is actually doing longitudinal control.
@@ -620,6 +629,9 @@ class Controls:
     # Check if openpilot is engaged and actuators are enabled
     self.enabled = self.state in ENABLED_STATES
     self.active = self.state in ACTIVE_STATES
+    # Clear user gate when OP not enabled
+    if not self.enabled:
+      self.lat_user_enabled = False
     if self.active or (self._dp_alka and self._dp_alka_active):
       self.current_alert_types.append(ET.WARNING)
 
@@ -647,8 +659,9 @@ class Controls:
 
     # Check which actuators can be enabled
     standstill = CS.vEgo <= max(self.CP.minSteerSpeed, MIN_LATERAL_CONTROL_SPEED) or CS.standstill
-    CC.latActive = self.active and not CS.steerFaultTemporary and not CS.steerFaultPermanent and \
-                   (not standstill or self.joystick_mode)
+    CC.latActive = (self.active and self.lat_user_enabled
+                    and not CS.steerFaultTemporary and not CS.steerFaultPermanent
+                    and (not standstill or self.joystick_mode))
     CC.longActive = self.enabled and not self.events.contains(ET.OVERRIDE_LONGITUDINAL) and self.CP.openpilotLongitudinalControl
 
     # rick - alka
@@ -662,6 +675,8 @@ class Controls:
       else:
         CC.latActive = True
 
+    # Ensure ALKA (or any block) can’t force steering when disabled/unarmed
+    CC.latActive = CC.latActive and self.enabled and self.lat_user_enabled
     # rick - assist-less lane change
     if self._dp_lat_lane_change_assist_disabled:
       # de-activate
