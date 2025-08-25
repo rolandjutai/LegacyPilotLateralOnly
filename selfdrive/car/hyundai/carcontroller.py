@@ -7,6 +7,9 @@ from openpilot.selfdrive.car import apply_driver_steer_torque_limits, common_fau
 from openpilot.selfdrive.car.hyundai import hyundaicanfd, hyundaican
 from openpilot.selfdrive.car.hyundai.hyundaicanfd import CanBus
 from openpilot.selfdrive.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CANFD_CAR, CAR
+from types import SimpleNamespace
+from collections import deque
+import time
 
 VisualAlert = car.CarControl.HUDControl.VisualAlert
 LongCtrlState = car.CarControl.Actuators.LongControlState
@@ -41,6 +44,97 @@ def process_hud_alert(enabled, fingerprint, hud_control):
 
   return sys_warning, sys_state, left_lane_warning, right_lane_warning
 
+from collections import deque
+import time
+
+class SmartCruiseController:
+  def __init__(self):
+    self.desired_speed = None
+    self.last_target_speed = None
+    self.cancel_active = False
+    self.cancel_time = 0.0
+    self.last_button_time = 0.0
+    self.speed_error_buffer = deque(maxlen=50)  # ~1s at 50 Hz
+    self.auto_resume_guard = 1.5
+    self.last_resume_time = 0.0
+    self.auto_cancel_flag = False
+
+  def update(self, clu_speed_mps, current_cruise_speed_mps, v_ego_mps,
+             lead, curvature, stop_prob, gas_cmd, accel_ego):
+
+    now = time.monotonic()
+    can_cmds = []
+
+    # Convert to kph for heuristic thresholds
+    clu_kph = clu_speed_mps * CV.MS_TO_KPH
+    cruise_kph = current_cruise_speed_mps * CV.MS_TO_KPH
+    v_kph = v_ego_mps * CV.MS_TO_KPH
+
+    # --- Base desired speed (m/s) ---
+    target_speed_mps = current_cruise_speed_mps
+
+    # Lead vehicle adjustment
+    if getattr(lead, 'modelProb', 0.0) > 0.5 and getattr(lead, 'dRel', 1e9) > 0:
+      time_gap = lead.dRel / max(v_ego_mps, 0.1)
+      if time_gap < 1.2:
+        target_speed_mps = min(target_speed_mps, v_ego_mps + lead.vRel - 5.0)  # vRel is m/s
+
+    # Curve adjustment (curvature in 1/m, thresholds tuned empirically)
+    if curvature:
+      curv_max = max(abs(c) for c in curvature[len(curvature)//2:])
+      if (v_kph < 80.0 and curv_max > 0.02) or (v_kph >= 80.0 and curv_max > 0.03):
+        curve_limit_kph = max(30.0, v_kph * (0.8 / (curv_max * 100.0)))
+        target_speed_mps = min(target_speed_mps, curve_limit_kph * CV.KPH_TO_MS)
+
+    # Stop line adjustment
+    if stop_prob > 0.7 and v_kph < 45.0:
+      target_speed_mps = 0.0
+
+    # Hill bias correction (compare bias in kph)
+    self.speed_error_buffer.append(clu_speed_mps - current_cruise_speed_mps)
+    if len(self.speed_error_buffer) == self.speed_error_buffer.maxlen:
+      avg_bias_kph = (sum(self.speed_error_buffer) / len(self.speed_error_buffer)) * CV.MS_TO_KPH
+      if avg_bias_kph < -2.0:   # undershooting uphill
+        target_speed_mps += 2.0 * CV.KPH_TO_MS
+      elif avg_bias_kph > 2.0:  # overshooting downhill
+        target_speed_mps -= 2.0 * CV.KPH_TO_MS
+
+    # Smoothing (in m/s)
+    smoothed = target_speed_mps if self.last_target_speed is None else 0.7 * self.last_target_speed + 0.3 * target_speed_mps
+    self.last_target_speed = smoothed
+    self.desired_speed = smoothed
+
+    # --- Decide button actions in 1 kph quanta ---
+    diff_kph = (self.desired_speed - current_cruise_speed_mps) * CV.MS_TO_KPH
+
+    # Emergency auto-cancel
+    urgent = (diff_kph < -10.0) or (getattr(lead, 'modelProb', 0.0) > 0.5 and getattr(lead, 'dRel', 1e9) < 6.0 and getattr(lead, 'vRel', 0.0) < -5.0)
+    if urgent and not self.cancel_active:
+      can_cmds.append(("CANCEL", True))
+      self.cancel_active = True
+      self.cancel_time = now
+      self.auto_cancel_flag = True
+      return can_cmds
+
+    # While canceled, auto-resume when near target
+    if self.cancel_active:
+      if v_ego_mps <= self.desired_speed + 1.0 and (now - self.cancel_time) > self.auto_resume_guard:
+        can_cmds.append(("SET", True))
+        self.cancel_active = False
+        self.auto_cancel_flag = False
+      return can_cmds
+
+    # Normal fine-tuning: 1 press per kph, max 4 every ~0.3s
+    if abs(diff_kph) >= 1.0:
+      if now - self.last_button_time > 0.3:
+        presses = min(4, int(abs(diff_kph)))
+        button = "RES_ACCEL" if diff_kph > 0 else "SET_DECEL"
+        for _ in range(presses):
+          can_cmds.append((button, False))
+        self.last_button_time = now
+
+    return can_cmds
+
 
 class CarController:
   def __init__(self, dbc_name, CP, VM):
@@ -55,8 +149,11 @@ class CarController:
     self.apply_steer_last = 0
     self.car_fingerprint = CP.carFingerprint
     self.last_button_frame = 0
+    # Instantiate SmartCruise controller
+    self.smartCruise = SmartCruiseController()
+    self.op_long_target_speed = 0.0
 
-  def update(self, CC, CS, now_nanos):
+  def update(self, CC, CS, now_nanos, lead_one, curvatures, stopline_prob):
     actuators = CC.actuators
     hud_control = CC.hudControl
 
@@ -87,6 +184,42 @@ class CarController:
                                                                                       hud_control)
 
     can_sends = []
+
+      # --- SmartCruise button spam (classic CAN only; independent of OP longitudinal) ---
+    if getattr(CS, 'smartcruise_active', False) and not self.CP.openpilotLongitudinalControl and (self.CP.carFingerprint not in CANFD_CAR):
+      # Safe defaults
+      lead = lead_one if lead_one is not None else SimpleNamespace(modelProb=0.0, dRel=1e9, vRel=0.0)
+      curv = list(curvatures) if curvatures else []
+      stop_prob = float(stopline_prob) if stopline_prob is not None else 0.0
+  
+      clu_speed = getattr(CS.out, 'vEgoCluster', CS.out.vEgo)                 # m/s
+      current_cruise_speed = getattr(CS.out.cruiseState, 'speed', CS.out.vEgo)  # m/s
+      v_ego = CS.out.vEgo
+      gas = CS.out.gas
+      a_ego = CS.out.aEgo
+  
+      cmds = self.smartCruise.update(
+        clu_speed,
+        current_cruise_speed,
+        v_ego,
+        lead,
+        curv,
+        stop_prob,
+        gas,
+        a_ego,
+      )
+  
+      for cmd, auto_cancel in cmds:
+        if cmd == "RES_ACCEL":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.RES_ACCEL, self.CP.carFingerprint))
+        elif cmd == "SET_DECEL":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
+        elif cmd == "CANCEL":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.CANCEL, self.CP.carFingerprint))
+          CS.auto_cancel = auto_cancel  # let interface consume next cycle
+        elif cmd == "SET":
+          can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
+    
 
     # *** common hyundai stuff ***
 
@@ -171,37 +304,5 @@ class CarController:
     return new_actuators, can_sends
 
   def create_button_messages(self, CC: car.CarControl, CS: car.CarState, use_clu11: bool):
-    can_sends = []
-    if use_clu11:
-      if CC.cruiseControl.cancel:
-        can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.CANCEL, self.CP.carFingerprint))
-      elif CC.cruiseControl.resume:
-        # send resume at a max freq of 10Hz
-        if (self.frame - self.last_button_frame) * DT_CTRL > 0.1:
-          # send 25 messages at a time to increases the likelihood of resume being accepted
-          can_sends.extend([hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.RES_ACCEL, self.CP.carFingerprint)] * 25)
-          if (self.frame - self.last_button_frame) * DT_CTRL >= 0.15:
-            self.last_button_frame = self.frame
-    else:
-      if (self.frame - self.last_button_frame) * DT_CTRL > 0.25:
-        # cruise cancel
-        if CC.cruiseControl.cancel:
-          if self.CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS:
-            can_sends.append(hyundaicanfd.create_acc_cancel(self.packer, self.CP, self.CAN, CS.cruise_info))
-            self.last_button_frame = self.frame
-          else:
-            for _ in range(20):
-              can_sends.append(hyundaicanfd.create_buttons(self.packer, self.CP, self.CAN, CS.buttons_counter+1, Buttons.CANCEL))
-            self.last_button_frame = self.frame
-
-        # cruise standstill resume
-        elif CC.cruiseControl.resume:
-          if self.CP.flags & HyundaiFlags.CANFD_ALT_BUTTONS:
-            # TODO: resume for alt button cars
-            pass
-          else:
-            for _ in range(20):
-              can_sends.append(hyundaicanfd.create_buttons(self.packer, self.CP, self.CAN, CS.buttons_counter+1, Buttons.RES_ACCEL))
-            self.last_button_frame = self.frame
-
-    return can_sends
+    # Button presses handled entirely by SmartCruiseController (classic CAN) or not used
+    return []
