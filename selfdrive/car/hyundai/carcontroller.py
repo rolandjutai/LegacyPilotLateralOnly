@@ -220,7 +220,16 @@ class CarController:
         elif cmd == "SET":
           can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, Buttons.SET_DECEL, self.CP.carFingerprint))
     
-
+    # If lateral not active, do not send any steering/EPS/HUD traffic.
+    # SmartCruise button pulses (CLU11) above are still allowed to go out.
+    if not CC.latActive:
+      new_actuators = actuators.copy()
+      new_actuators.steer = 0.0
+      new_actuators.steerOutputCan = 0
+      new_actuators.accel = accel
+      self.frame += 1
+      return new_actuators, can_sends
+    
     # *** common hyundai stuff ***
 
     # tester present - w/ no response (keeps relevant ECU disabled)
