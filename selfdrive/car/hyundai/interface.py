@@ -377,7 +377,14 @@ class CarInterface(CarInterfaceBase):
       BUTTONS_DICT
     )
   
-    events = self.create_common_events(ret, pcm_enable=self.CP.pcmCruise, allow_enable=False)
+    # selfdrive/car/hyundai/interface.py
+    # Allow enable when user explicitly requests lateral, SET/- pressed this cycle, or MAIN is ON
+    set_pressed_this_cycle = any(be.type == ButtonType.decelCruise and be.pressed for be in ret.buttonEvents)
+    events = self.create_common_events(
+      ret,
+      pcm_enable=self.CP.pcmCruise,
+      allow_enable=(self.lat_active or set_pressed_this_cycle or ret.cruiseState.available)
+    )
   
     # pedals
     self._handle_pedals(self.CS, events)
