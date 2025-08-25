@@ -52,6 +52,10 @@ class CarState(CarStateBase):
 
     self.params = CarControllerParams(CP)
 
+    # SmartCruise integration flags (internal only; do not write to ret)
+    self.smartcruise_active = False
+    self.auto_cancel = False
+
   def update(self, cp, cp_cam):
     if self.CP.carFingerprint in CANFD_CAR:
       return self.update_canfd(cp, cp_cam)
@@ -257,6 +261,7 @@ class CarState(CarStateBase):
     # if self.CP.carFingerprint not in CAMERA_SCC_CAR:
     #  ret.cruiseState.available = True
     # return ret
+    return ret
 
   def get_can_parser(self, CP):
     if CP.carFingerprint in CANFD_CAR:
