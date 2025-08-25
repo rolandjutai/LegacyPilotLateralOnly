@@ -10,6 +10,7 @@ from openpilot.selfdrive.car.hyundai.hyundaicanfd import CanBus
 from openpilot.selfdrive.car.hyundai.values import HyundaiFlags, CAR, DBC, CAN_GEARS, CAMERA_SCC_CAR, \
                                                    CANFD_CAR, EV_CAR, HYBRID_CAR, Buttons, CarControllerParams
 from openpilot.selfdrive.car.interfaces import CarStateBase
+from openpilot.common.params import Params
 
 PREV_BUTTON_SAMPLES = 8
 CLUSTER_SAMPLE_RATE = 20  # frames
@@ -55,6 +56,7 @@ class CarState(CarStateBase):
     # SmartCruise integration flags (internal only; do not write to ret)
     self.smartcruise_active = False
     self.auto_cancel = False
+    self.force_no_scc = (CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
 
   def update(self, cp, cp_cam):
     if self.CP.carFingerprint in CANFD_CAR:
@@ -113,11 +115,20 @@ class CarState(CarStateBase):
       ret.cruiseState.standstill = False
       ret.cruiseState.nonAdaptive = False
     else:
-      ret.cruiseState.available = (cruise_set_pressed or cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1 or self.cruise_buttons[-1] == Buttons.SET_DECEL)
-      ret.cruiseState.enabled = (cp_cruise.vl["SCC12"]["ACCMode"] != 0 or self.cruise_buttons[-1] == Buttons.SET_DECEL or cruise_set_pressed)
-      ret.cruiseState.standstill = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 4.
-      ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.  # Shows 'Cruise Control' on dash
-      ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
+      force_no_scc = (self.CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+      if force_no_scc:
+        # Kona (no SCC): always report cruise available to allow lateral; enabled only on SET press
+        ret.cruiseState.available = True
+        ret.cruiseState.enabled = (self.cruise_buttons[-1] == Buttons.SET_DECEL or cruise_set_pressed)
+        ret.cruiseState.standstill = False
+        ret.cruiseState.nonAdaptive = False
+        ret.cruiseState.speed = 0.0
+      else:
+        ret.cruiseState.available = (cruise_set_pressed or cp_cruise.vl["SCC11"]["MainMode_ACC"] == 1 or self.cruise_buttons[-1] == Buttons.SET_DECEL)
+        ret.cruiseState.enabled = (cp_cruise.vl["SCC12"]["ACCMode"] != 0 or self.cruise_buttons[-1] == Buttons.SET_DECEL or cruise_set_pressed)
+        ret.cruiseState.standstill = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 4.
+        ret.cruiseState.nonAdaptive = cp_cruise.vl["SCC11"]["SCCInfoDisplay"] == 2.  # 'Cruise Control' on dash
+        ret.cruiseState.speed = cp_cruise.vl["SCC11"]["VSetDis"] * speed_conv
 
     # --- phr00t/Kona hack: car has no stock SCC, so always report cruise available ---
     # if self.CP.carFingerprint not in CAMERA_SCC_CAR and self.CP.carFingerprint not in CANFD_CAR:
@@ -154,13 +165,18 @@ class CarState(CarStateBase):
     ret.gearShifter = self.parse_gear_shifter(self.shifter_values.get(gear))
 
     if not self.CP.openpilotLongitudinalControl:
-      aeb_src = "FCA11" if self.CP.flags & HyundaiFlags.USE_FCA.value else "SCC12"
-      aeb_sig = "FCA_CmdAct" if self.CP.flags & HyundaiFlags.USE_FCA.value else "AEB_CmdAct"
-      aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
-      scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1  # sometimes only SCC system shows an FCW
-      aeb_braking = cp_cruise.vl[aeb_src]["CF_VSM_DecCmdAct"] != 0 or cp_cruise.vl[aeb_src][aeb_sig] != 0
-      ret.stockFcw = (aeb_warning or scc_warning) and not aeb_braking
-      ret.stockAeb = aeb_warning and aeb_braking
+      force_no_scc = (self.CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+      if force_no_scc:
+        ret.stockFcw = False
+        ret.stockAeb = False
+      else:
+        aeb_src = "FCA11" if self.CP.flags & HyundaiFlags.USE_FCA.value else "SCC12"
+        aeb_sig = "FCA_CmdAct" if self.CP.flags & HyundaiFlags.USE_FCA.value else "AEB_CmdAct"
+        aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
+        scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1  # sometimes only SCC shows FCW
+        aeb_braking = cp_cruise.vl[aeb_src]["CF_VSM_DecCmdAct"] != 0 or cp_cruise.vl[aeb_src][aeb_sig] != 0
+        ret.stockFcw = (aeb_warning or scc_warning) and not aeb_braking
+        ret.stockAeb = aeb_warning and aeb_braking
 
     if self.CP.enableBsm:
       ret.leftBlindspot = cp.vl["LCA11"]["CF_Lca_IndLeft"] != 0
@@ -282,7 +298,8 @@ class CarState(CarStateBase):
       ("SAS11", 100),
     ]
 
-    if not CP.openpilotLongitudinalControl and CP.carFingerprint not in CAMERA_SCC_CAR:
+    force_no_scc = (CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+    if not CP.openpilotLongitudinalControl and CP.carFingerprint not in CAMERA_SCC_CAR and not force_no_scc:
       messages += [
         ("SCC11", 50),
         ("SCC12", 50),
@@ -321,12 +338,13 @@ class CarState(CarStateBase):
       ("LKAS11", 100)
     ]
 
-    if not CP.openpilotLongitudinalControl and CP.carFingerprint in CAMERA_SCC_CAR:
+    force_no_scc = (CP.carFingerprint == CAR.KONA) or Params().get_bool('dp_force_no_scc')
+    if not CP.openpilotLongitudinalControl and CP.carFingerprint in CAMERA_SCC_CAR and not force_no_scc:
       messages += [
         ("SCC11", 50),
         ("SCC12", 50),
       ]
-
+  
       if CP.flags & HyundaiFlags.USE_FCA.value:
         messages.append(("FCA11", 50))
 
