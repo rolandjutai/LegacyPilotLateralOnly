@@ -222,7 +222,28 @@ class CarController:
     
     # If lateral not active, do not send any steering/EPS/HUD traffic.
     # SmartCruise button pulses (CLU11) above are still allowed to go out.
+    # If lateral not active, still send LKAS11 keepalive with zero torque to avoid EPS/LKA faults.
+    # SmartCruise button pulses (CLU11) above are still allowed to go out.
     if not CC.latActive:
+      if self.CP.carFingerprint not in CANFD_CAR:
+        # Minimal, conservative HUD fields to avoid any LKAS/LFA activation hints
+        can_sends.append(hyundaican.create_lkas11(
+          self.packer, self.frame, self.car_fingerprint,
+          0,            # apply_steer
+          False,        # apply_steer_req
+          False,        # torque_fault
+          CS.lkas11,
+          False,        # sys_warning
+          1,            # sys_state: default/no lines
+          False,        # enabled flag for HUD
+          False, False, # leftLaneVisible, rightLaneVisible
+          0, 0          # left_lane_warning, right_lane_warning
+        ))
+      else:
+        # If you test on CAN-FD cars later, send a zero-torque steering message instead of nothing:
+        # can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, False, False, 0))
+        pass
+
       new_actuators = actuators.copy()
       new_actuators.steer = 0.0
       new_actuators.steerOutputCan = 0
