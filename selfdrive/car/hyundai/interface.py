@@ -11,6 +11,9 @@ from openpilot.selfdrive.car.interfaces import CarInterfaceBase
 from openpilot.selfdrive.car.disable_ecu import disable_ecu
 
 from openpilot.common.params import Params
+from collections import deque
+import cereal.messaging as messaging
+import time
 
 Ecu = car.CarParams.Ecu
 SafetyModel = car.CarParams.SafetyModel
@@ -31,9 +34,70 @@ def set_safety_config_hyundai(candidate, CAN, can_fd=False):
 
   return cfgs
 
+class SmartCruiseController:
+  def __init__(self):
+    self.last_press_time = 0.0
+    self.last_target_mps = None
+
+  # Decide at most one nudge per update: return ['RES'] or ['SET'] or []
+  # Inputs are safe-optional; handle None gracefully
+  def update(self, v_ego_mps, cruise_speed_mps, lead, curvatures, stop_prob):
+    now = time.monotonic()
+    target = cruise_speed_mps
+
+    # Lead vehicle heuristic
+    if lead is not None:
+      modelProb = getattr(lead, 'modelProb', 0.0)
+      dRel = getattr(lead, 'dRel', 1e9)
+      vRel = getattr(lead, 'vRel', 0.0)
+      if modelProb > 0.5 and dRel > 0:
+        tgap = dRel / max(v_ego_mps, 0.1)
+        if tgap < 1.2:
+          # reduce target to avoid closing too fast
+          target = min(target, max(0.0, v_ego_mps + vRel - 3.0))
+
+    # Curve heuristic (curvatures in 1/m)
+    if curvatures:
+      curv_max = max(abs(c) for c in curvatures[len(curvatures)//2:])
+      v_kph = v_ego_mps * CV.MS_TO_KPH
+      if (v_kph < 80.0 and curv_max > 0.02) or (v_kph >= 80.0 and curv_max > 0.03):
+        limit_kph = max(30.0, v_kph * (0.8 / (curv_max * 100.0)))
+        target = min(target, limit_kph * CV.KPH_TO_MS)
+
+    # Stopline heuristic
+    if (stop_prob or 0.0) > 0.7 and (v_ego_mps * CV.MS_TO_KPH) < 45.0:
+      target = 0.0
+
+    # Smooth target to avoid flip-flopping
+    if self.last_target_mps is None:
+      smoothed = target
+    else:
+      smoothed = 0.7 * self.last_target_mps + 0.3 * target
+    self.last_target_mps = smoothed
+
+    # Decide one press in 1 kph increments
+    diff_kph = (smoothed - cruise_speed_mps) * CV.MS_TO_KPH
+    cmds = []
+    if abs(diff_kph) >= 1.0 and (now - self.last_press_time) > 0.3:
+      cmds.append('RES' if diff_kph > 0 else 'SET')
+      self.last_press_time = now
+    return cmds
+
 
 class CarInterface(CarInterfaceBase):
   @staticmethod
+  def __init__(self, CP, CarController, CarState):
+    super().__init__(CP, CarController, CarState)
+    # SmartCruise runtime (classic CAN + stock longitudinal only)
+    self.smartcruise_active = False
+    self.sc_btn_queue = deque()
+    # Optional planner/lead inputs for SmartCruise
+    self.sm = messaging.SubMaster(['radarState', 'lateralPlan', 'longitudinalPlan'])
+    self.sc = SmartCruiseController()
+    # Low speed alert state (your code already uses it)
+    self.low_speed_alert = False
+
+  
   def _get_params(ret, candidate, fingerprint, car_fw, experimental_long, docs):
     ret.carName = "hyundai"
     ret.radarUnavailable = RADAR_START_ADDR not in fingerprint[1] or DBC[ret.carFingerprint]["radar"] is None
@@ -367,6 +431,65 @@ class CarInterface(CarInterfaceBase):
         if b.type == ButtonType.decelCruise and b.pressed:
             if not self.CS.out.cruiseState.enabled:   # only if OP not already active
                 events.add(EventName.buttonEnable)
+
+      # --- SmartCruise activation and button queueing (classic CAN, OP-long OFF) ---
+      sc_allowed = (self.CP.carFingerprint not in CANFD_CAR) and (not self.CP.openpilotLongitudinalControl)
+
+      # Handle user button presses to arm/disarm SmartCruise
+      for b in ret.buttonEvents:
+        # RES/+ pressed: arm SmartCruise only when cruise main is ON
+        if sc_allowed and b.type == ButtonType.accelCruise and b.pressed and ret.cruiseState.available:
+          if not self.smartcruise_active:
+            self.smartcruise_active = True
+            # If cruise not yet enabled, send one SET to latch current speed
+            if not ret.cruiseState.enabled:
+              self.sc_btn_queue.append("SET")
+
+        # CANCEL always disarms SmartCruise
+        if b.type == ButtonType.cancel and b.pressed:
+          self.smartcruise_active = False
+
+      # MAIN off disarms SmartCruise
+      if not ret.cruiseState.available:
+        self.smartcruise_active = False
+
+      # If SmartCruise is armed and allowed, run SC using planner/lead inputs and enqueue nudges
+      if sc_allowed and self.smartcruise_active:
+        # Non-blocking planner/lead update
+        self.sm.update(0)
+
+        # lead: support leadOne or leadsV3
+        lead = None
+        if self.sm.alive.get('radarState', False):
+          rs = self.sm['radarState']
+          lead = getattr(rs, 'leadOne', None)
+          if lead is None and hasattr(rs, 'leadsV3') and len(rs.leadsV3):
+            lead = rs.leadsV3[0]
+
+        # curvature and stopline prob (optional)
+        curvs = list(self.sm['lateralPlan'].curvatures) if self.sm.alive.get('lateralPlan', False) else []
+        stop_prob = float(self.sm['longitudinalPlan'].stoplineProb) if self.sm.alive.get('longitudinalPlan', False) else 0.0
+
+        # Current cruise speed field can be 0 when not enabled; fall back to vEgo in that case
+        cruise_speed_mps = getattr(ret.cruiseState, 'speed', 0.0) or ret.vEgo
+
+        cmds = self.sc.update(
+          v_ego_mps=ret.vEgo,
+          cruise_speed_mps=cruise_speed_mps,
+          lead=lead,
+          curvatures=curvs,
+          stop_prob=stop_prob,
+        )
+
+        for token in cmds:
+          if token in ('RES', 'SET'):
+            self.sc_btn_queue.append(token)
+      else:
+        # Not allowed/active: clear pending tokens to avoid stale presses
+        self.sc_btn_queue.clear()
+
+      # Expose queue to CarController; it will rate-limit and send CLU11 pulses
+      self.CS.sc_btn_queue = self.sc_btn_queue
   
       # low speed steer alert hysteresis logic
       if ret.vEgo < (self.CP.minSteerSpeed + 2.) and self.CP.minSteerSpeed > 10.:
