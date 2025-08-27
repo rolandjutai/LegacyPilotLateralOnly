@@ -140,7 +140,16 @@ class CarController:
                                                 left_lane_warning, right_lane_warning))
 
       if not self.CP.openpilotLongitudinalControl:
-        can_sends.extend(self.create_button_messages(CC, CS, use_clu11=True))
+        can_sends.extend(self.create_button_messages(CC, CS, use_clu11=True))             
+        # SmartCruise queued button pulses (classic CAN only, OP-long off)
+        if hasattr(CS, "sc_btn_queue") and CS.sc_btn_queue:
+          # conservative rate limit to avoid spam and interleaving with stock bursts
+          if (self.frame - self.last_button_frame) * DT_CTRL > 0.3:
+            token = CS.sc_btn_queue.popleft()  # expected: "RES" or "SET"
+            if token in ("RES", "SET"):
+              btn = Buttons.RES_ACCEL if token == "RES" else Buttons.SET_DECEL
+              can_sends.append(hyundaican.create_clu11(self.packer, self.frame, CS.clu11, btn, self.CP.carFingerprint))
+              self.last_button_frame = self.frame
 
       if self.frame % 2 == 0 and self.CP.openpilotLongitudinalControl:
         # TODO: unclear if this is needed
