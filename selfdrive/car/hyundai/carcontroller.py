@@ -148,7 +148,12 @@ class CarController:
     # Instantiate SmartCruise controller
     self.smartCruise = SmartCruiseController()
     self.op_long_target_speed = 0.0
-
+    
+    # Soft-start for LKAS engagement (~0.5 s at 50 Hz)
+    self.prev_latActive = False
+    self.LKAS_SOFTSTART_FRAMES = 25
+    self.lat_softstart_until_frame = -1
+    
   def update(self, CC, CS, now_nanos, lead_one=None, curvatures=None, stopline_prob=None):
     actuators = CC.actuators
     hud_control = CC.hudControl
@@ -162,8 +167,17 @@ class CarController:
                                                                        self.angle_limit_counter, MAX_ANGLE_FRAMES,
                                                                        MAX_ANGLE_CONSECUTIVE_FRAMES)
 
+    # Detect rising edge of lateral enable and start soft-start window
+    if CC.latActive and not self.prev_latActive:
+      self.lat_softstart_until_frame = self.frame + self.LKAS_SOFTSTART_FRAMES
+      
     if not CC.latActive:
       apply_steer = 0
+      apply_steer_req = False
+    # During soft-start, keep zero torque and do not request steer even if latActive is True
+    elif self.lat_softstart_until_frame >= self.frame:
+      apply_steer = 0
+      apply_steer_req = False
 
     # Hold torque with induced temporary fault when cutting the actuation bit
     torque_fault = CC.latActive and not apply_steer_req
@@ -182,7 +196,7 @@ class CarController:
     can_sends = []
 
       # --- SmartCruise button spam (classic CAN only; independent of OP longitudinal) ---
-    if getattr(CS, 'smartcruise_active', False) and not self.CP.openpilotLongitudinalControl and (self.CP.carFingerprint not in CANFD_CAR):
+    if False and getattr(CS, 'smartcruise_active', False) and not self.CP.openpilotLongitudinalControl and (self.CP.carFingerprint not in CANFD_CAR):
       # Safe defaults
       lead = lead_one if lead_one is not None else SimpleNamespace(modelProb=0.0, dRel=1e9, vRel=0.0)
       curv = list(curvatures) if curvatures else []
@@ -255,7 +269,7 @@ class CarController:
     # *** common hyundai stuff ***
 
     # tester present - w/ no response (keeps relevant ECU disabled)
-    if self.frame % 100 == 0 and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value) and self.CP.openpilotLongitudinalControl:
+    if self.frame % 100 == 0 and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value):
       # for longitudinal control, either radar or ADAS driving ECU
       addr, bus = 0x7d0, 0
       if self.CP.flags & HyundaiFlags.CANFD_HDA2.value:
@@ -330,7 +344,10 @@ class CarController:
     new_actuators.steer = apply_steer / self.params.STEER_MAX
     new_actuators.steerOutputCan = apply_steer
     new_actuators.accel = accel
-
+    
+    # Track previous latActive for rising-edge detection
+    self.prev_latActive = CC.latActive
+    
     self.frame += 1
     return new_actuators, can_sends
 
