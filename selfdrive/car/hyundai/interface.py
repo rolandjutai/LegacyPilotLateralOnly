@@ -85,7 +85,6 @@ class SmartCruiseController:
 
 
 class CarInterface(CarInterfaceBase):
-  @staticmethod
   def __init__(self, CP, CarController, CarState):
     super().__init__(CP, CarController, CarState)
     # SmartCruise runtime (classic CAN + stock longitudinal only)
@@ -96,8 +95,7 @@ class CarInterface(CarInterfaceBase):
     self.sc = SmartCruiseController()
     # Low speed alert state (your code already uses it)
     self.low_speed_alert = False
-
-  
+  @staticmethod
   def _get_params(ret, candidate, fingerprint, car_fw, experimental_long, docs):
     ret.carName = "hyundai"
     ret.radarUnavailable = RADAR_START_ADDR not in fingerprint[1] or DBC[ret.carFingerprint]["radar"] is None
