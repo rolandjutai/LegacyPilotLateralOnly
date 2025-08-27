@@ -1,7 +1,6 @@
 from cereal import car
 from openpilot.common.conversions import Conversions as CV
 from openpilot.common.numpy_fast import clip
-from openpilot.common.realtime import DT_CTRL
 from opendbc.can.packer import CANPacker
 from openpilot.selfdrive.car import apply_driver_steer_torque_limits, common_fault_avoidance
 from openpilot.selfdrive.car.hyundai import hyundaicanfd, hyundaican
@@ -43,9 +42,6 @@ def process_hud_alert(enabled, fingerprint, hud_control):
     right_lane_warning = 1 if fingerprint in (CAR.GENESIS_G90, CAR.GENESIS_G80) else 2
 
   return sys_warning, sys_state, left_lane_warning, right_lane_warning
-
-from collections import deque
-import time
 
 class SmartCruiseController:
   def __init__(self):
@@ -127,7 +123,7 @@ class SmartCruiseController:
     # Normal fine-tuning: 1 press per kph, max 4 every ~0.3s
     if abs(diff_kph) >= 1.0:
       if now - self.last_button_time > 0.3:
-        presses = min(4, int(abs(diff_kph)))
+        presses = 1  # conservative: 1 press per ~0.3s during testing
         button = "RES_ACCEL" if diff_kph > 0 else "SET_DECEL"
         for _ in range(presses):
           can_cmds.append((button, False))
@@ -153,7 +149,7 @@ class CarController:
     self.smartCruise = SmartCruiseController()
     self.op_long_target_speed = 0.0
 
-  def update(self, CC, CS, now_nanos, lead_one, curvatures, stopline_prob):
+  def update(self, CC, CS, now_nanos, lead_one=None, curvatures=None, stopline_prob=None):
     actuators = CC.actuators
     hud_control = CC.hudControl
 
@@ -227,22 +223,27 @@ class CarController:
     if not CC.latActive:
       if self.CP.carFingerprint not in CANFD_CAR:
         # Minimal, conservative HUD fields to avoid any LKAS/LFA activation hints
+        # Use computed HUD fields to avoid cluster re-initialization/blinking
         can_sends.append(hyundaican.create_lkas11(
           self.packer, self.frame, self.car_fingerprint,
-          0,            # apply_steer
-          False,        # apply_steer_req
-          False,        # torque_fault
+          0,                 # apply_steer
+          False,             # apply_steer_req
+          False,             # torque_fault
           CS.lkas11,
-          False,        # sys_warning
-          1,            # sys_state: default/no lines
-          False,        # enabled flag for HUD
-          False, False, # leftLaneVisible, rightLaneVisible
-          0, 0          # left_lane_warning, right_lane_warning
+          sys_warning,       # from process_hud_alert
+          sys_state,         # from process_hud_alert
+          CC.enabled,        # HUD 'enabled' state
+          hud_control.leftLaneVisible, hud_control.rightLaneVisible,
+          left_lane_warning, right_lane_warning
         ))
       else:
         # If you test on CAN-FD cars later, send a zero-torque steering message instead of nothing:
         # can_sends.extend(hyundaicanfd.create_steering_messages(self.packer, self.CP, self.CAN, False, False, 0))
         pass
+
+      # Keep LFA MFA (cluster) at 20 Hz to avoid cluster re-init blinking
+      if self.frame % 5 == 0 and (self.CP.flags & HyundaiFlags.SEND_LFA.value):
+        can_sends.append(hyundaican.create_lfahda_mfc(self.packer, CC.enabled))
 
       new_actuators = actuators.copy()
       new_actuators.steer = 0.0
