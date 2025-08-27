@@ -19,17 +19,17 @@ class DRIVER_MONITOR_SETTINGS():
   def __init__(self):
     self._DT_DMON = DT_DMON
     # ref (page15-16): https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=CELEX:42018X1947&rid=2
-    self._AWARENESS_TIME = 300. # passive wheeltouch total timeout
-    self._AWARENESS_PRE_TIME_TILL_TERMINAL = 150.
-    self._AWARENESS_PROMPT_TIME_TILL_TERMINAL = 60.
-    self._DISTRACTED_TIME = 110. # active monitoring total timeout
-    self._DISTRACTED_PRE_TIME_TILL_TERMINAL = 80.
-    self._DISTRACTED_PROMPT_TIME_TILL_TERMINAL = 60.
+    self._AWARENESS_TIME = 600. # passive wheeltouch total timeout
+    self._AWARENESS_PRE_TIME_TILL_TERMINAL = 300.
+    self._AWARENESS_PROMPT_TIME_TILL_TERMINAL = 300.
+    self._DISTRACTED_TIME = 310. # active monitoring total timeout
+    self._DISTRACTED_PRE_TIME_TILL_TERMINAL = 150.
+    self._DISTRACTED_PROMPT_TIME_TILL_TERMINAL = 150.
 
-    self._FACE_THRESHOLD = 0.7
-    self._EYE_THRESHOLD = 0.65
+    self._FACE_THRESHOLD = 0.45
+    self._EYE_THRESHOLD = 0.4
     self._SG_THRESHOLD = 0.9
-    self._BLINK_THRESHOLD = 0.895
+    self._BLINK_THRESHOLD = 0.93
 
     self._EE_THRESH11 = 0.275
     self._EE_THRESH12 = 5.5
@@ -39,10 +39,10 @@ class DRIVER_MONITOR_SETTINGS():
     self._EE_THRESH22 = 0.35
 
     self._POSE_PITCH_THRESHOLD = 0.5
-    self._POSE_PITCH_THRESHOLD_SLACK = 0.4
+    self._POSE_PITCH_THRESHOLD_SLACK = 0.7
     self._POSE_PITCH_THRESHOLD_STRICT = self._POSE_PITCH_THRESHOLD
     self._POSE_YAW_THRESHOLD = 0.5
-    self._POSE_YAW_THRESHOLD_SLACK = 0.6
+    self._POSE_YAW_THRESHOLD_SLACK = 0.7
     self._POSE_YAW_THRESHOLD_STRICT = self._POSE_YAW_THRESHOLD
     self._PITCH_NATURAL_OFFSET = 0.029 # initial value before offset is learned
     self._PITCH_NATURAL_THRESHOLD = 0.6
@@ -52,8 +52,8 @@ class DRIVER_MONITOR_SETTINGS():
     self._YAW_MAX_OFFSET = 0.4
     self._YAW_MIN_OFFSET = -0.0246
 
-    self._POSESTD_THRESHOLD = 0.5
-    self._HI_STD_FALLBACK_TIME = int(100  / self._DT_DMON)  # fall back to wheel touch if model is uncertain for 10s
+    self._POSESTD_THRESHOLD = 0.8
+    self._HI_STD_FALLBACK_TIME = int(800  / self._DT_DMON)  # fall back to wheel touch if model is uncertain for 10s
     self._DISTRACTED_FILTER_TS = 0.25  # 0.6Hz
 
     self._POSE_CALIB_MIN_SPEED = 13  # 30 mph
