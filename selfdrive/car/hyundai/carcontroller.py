@@ -151,7 +151,7 @@ class CarController:
     
     # Soft-start for LKAS engagement (~0.5 s at 50 Hz)
     self.prev_latActive = False
-    self.LKAS_SOFTSTART_FRAMES = 25
+    self.LKAS_SOFTSTART_FRAMES = 40  # ~0.8 s at 50 Hz
     self.lat_softstart_until_frame = -1
     
   def update(self, CC, CS, now_nanos, lead_one=None, curvatures=None, stopline_prob=None):
@@ -271,7 +271,7 @@ class CarController:
     # *** common hyundai stuff ***
 
     # tester present - w/ no response (keeps relevant ECU disabled)
-    if self.frame % 100 == 0 and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value):
+     if self.frame % 100 == 0 and ((self.CP.flags & HyundaiFlags.CANFD_HDA2.value) or (self.CP.openpilotLongitudinalControl and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value))):
       # for longitudinal control, either radar or ADAS driving ECU
       addr, bus = 0x7d0, 0
       if self.CP.flags & HyundaiFlags.CANFD_HDA2.value:
