@@ -93,6 +93,8 @@ class CarInterface(CarInterfaceBase):
     # Optional planner/lead inputs for SmartCruise
     self.sm = messaging.SubMaster(['radarState', 'lateralPlan', 'longitudinalPlan'])
     self.sc = SmartCruiseController()
+    self.last_sc_status_put = 0.0
+    self.last_sc_status = ""
     # Low speed alert state (your code already uses it)
     self.low_speed_alert = False
   @staticmethod
@@ -482,9 +484,33 @@ class CarInterface(CarInterfaceBase):
         for token in cmds:
           if token in ('RES', 'SET'):
             self.sc_btn_queue.append(token)
+
+        # Publish SmartCruise HUD status string (rate-limited)
+        target_mps = self.sc.last_target_mps if self.sc.last_target_mps is not None else cruise_speed_mps
+        target_kph = int(round(target_mps * CV.MS_TO_KPH))
+        
+        lead_yes = False
+        if lead is not None:
+          lead_yes = bool(getattr(lead, 'status', True) or getattr(lead, 'modelProb', 0.0) > 0.5)
+        
+        status = f"SmartCruise ON (Target: {target_kph} km/h, Lead: {'Yes' if lead_yes else 'No'})"
+        
+        now = time.monotonic()
+        if status != self.last_sc_status or (now - self.last_sc_status_put) > 0.5:
+          Params().put("SmartCruiseStatus", status)
+          self.last_sc_status = status
+          self.last_sc_status_put = now
+
+    
       else:
         # Not allowed/active: clear pending tokens to avoid stale presses
         self.sc_btn_queue.clear()
+        # Clear HUD status when inactive (rate-limited)
+        now = time.monotonic()
+        if self.last_sc_status != "" and (now - self.last_sc_status_put) > 0.5:
+          Params().put("SmartCruiseStatus", "")
+          self.last_sc_status = ""
+          self.last_sc_status_put = now
 
       # Expose queue to CarController; it will rate-limit and send CLU11 pulses
       self.CS.sc_btn_queue = self.sc_btn_queue
