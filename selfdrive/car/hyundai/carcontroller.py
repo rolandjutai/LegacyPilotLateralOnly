@@ -237,18 +237,18 @@ class CarController:
     if not CC.latActive:
       if self.CP.carFingerprint not in CANFD_CAR:
         # Minimal, conservative HUD fields to avoid any LKAS/LFA activation hints
-        # Use computed HUD fields to avoid cluster re-initialization/blinking
+        # Neutral HUD while unarmed: prevents LKAS re-initialization attempts
         can_sends.append(hyundaican.create_lkas11(
           self.packer, self.frame, self.car_fingerprint,
-          0,                 # apply_steer
-          False,             # apply_steer_req
-          False,             # torque_fault
+          0,            # apply_steer
+          False,        # apply_steer_req
+          False,        # torque_fault
           CS.lkas11,
-          sys_warning,       # from process_hud_alert
-          sys_state,         # from process_hud_alert
-          CC.enabled,        # HUD 'enabled' state
-          hud_control.leftLaneVisible, hud_control.rightLaneVisible,
-          left_lane_warning, right_lane_warning
+          False,        # sys_warning
+          1,            # sys_state: default/no lines
+          False,        # enabled flag for HUD
+          False, False, # leftLaneVisible, rightLaneVisible
+          0, 0          # left_lane_warning, right_lane_warning
         ))
       else:
         # If you test on CAN-FD cars later, send a zero-torque steering message instead of nothing:
@@ -263,6 +263,8 @@ class CarController:
       new_actuators.steer = 0.0
       new_actuators.steerOutputCan = 0
       new_actuators.accel = accel
+      # Keep soft-start edge detector accurate even when returning early
+      self.prev_latActive = CC.latActive
       self.frame += 1
       return new_actuators, can_sends
     
