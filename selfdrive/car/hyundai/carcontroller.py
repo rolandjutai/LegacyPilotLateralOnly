@@ -271,7 +271,7 @@ class CarController:
     # *** common hyundai stuff ***
 
     # tester present - w/ no response (keeps relevant ECU disabled)
-     if self.frame % 100 == 0 and ((self.CP.flags & HyundaiFlags.CANFD_HDA2.value) or (self.CP.openpilotLongitudinalControl and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value))):
+    if self.frame % 100 == 0 and ((self.CP.flags & HyundaiFlags.CANFD_HDA2.value) or (self.CP.openpilotLongitudinalControl and not (self.CP.flags & HyundaiFlags.CANFD_CAMERA_SCC.value))):
       # for longitudinal control, either radar or ADAS driving ECU
       addr, bus = 0x7d0, 0
       if self.CP.flags & HyundaiFlags.CANFD_HDA2.value:
