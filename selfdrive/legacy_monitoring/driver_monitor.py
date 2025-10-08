@@ -210,7 +210,7 @@ class DriverStatus():
       return
 
     self.face_partial = driver_state.partialFace > self.settings._PARTIAL_FACE_THRESHOLD
-    self.face_detected = driver_state.faceProb > self.settings._FACE_THRESHOLD or self.face_partial
+    self.face_detected = True
     self.pose.roll, self.pose.pitch, self.pose.yaw = face_orientation_from_net(driver_state.faceOrientation, driver_state.facePosition, cal_rpy, self.is_rhd_region)
     self.pose.pitch_std = driver_state.faceOrientationStd[0]
     self.pose.yaw_std = driver_state.faceOrientationStd[1]
@@ -220,8 +220,7 @@ class DriverStatus():
     self.blink.left_blink = driver_state.leftBlinkProb * (driver_state.leftEyeProb > self.settings._EYE_THRESHOLD) * (driver_state.sunglassesProb < self.settings._SG_THRESHOLD)
     self.blink.right_blink = driver_state.rightBlinkProb * (driver_state.rightEyeProb > self.settings._EYE_THRESHOLD) * (driver_state.sunglassesProb < self.settings._SG_THRESHOLD)
 
-    self.driver_distracted = self._is_driver_distracted(self.pose, self.blink) > 0 and \
-                                   driver_state.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std
+    self.driver_distracted = False
     self.driver_distraction_filter.update(self.driver_distracted)
 
     # update offseter
@@ -241,8 +240,6 @@ class DriverStatus():
       self.hi_stds = 0
 
   def update(self, events, driver_engaged, ctrl_active, standstill):
-    if (driver_engaged and self.awareness > 0) or not ctrl_active:
-      # reset only when on disengagement if red reached
       self.awareness = 1.
       self.awareness_active = 1.
       self.awareness_passive = 1.
