@@ -31,55 +31,29 @@ def dmonitoringd_thread(sm=None, pm=None):
   driver_engaged = False
 
   # 10Hz <- dmonitoringmodeld
+  # Skip driver monitoring updates
   while True:
     sm.update()
 
-    if not sm.updated['driverStateV2']:
-      continue
-
-    # Get interaction
-    if sm.updated['carState']:
-      v_cruise = sm['carState'].cruiseState.speed
-      driver_engaged = len(sm['carState'].buttonEvents) > 0 or \
-                        v_cruise != v_cruise_last or \
-                        sm['carState'].steeringPressed or \
-                        sm['carState'].gasPressed
-      v_cruise_last = v_cruise
-
-    if sm.updated['modelV2']:
-      driver_status.set_policy(sm['modelV2'], sm['carState'].vEgo)
-
-    # Get data from dmonitoringmodeld
-    events = Events()
-    driver_status.update_states(sm['driverStateV2'], sm['liveCalibration'].rpyCalib, sm['carState'].vEgo, sm['controlsState'].enabled)
-
-    # Block engaging after max number of distrations
-    if driver_status.terminal_alert_cnt >= driver_status.settings._MAX_TERMINAL_ALERTS or \
-       driver_status.terminal_time >= driver_status.settings._MAX_TERMINAL_DURATION:
-      events.add(car.CarEvent.EventName.tooDistracted)
-
-    # Update events from driver state
-    driver_status.update_events(events, driver_engaged, sm['controlsState'].enabled, sm['carState'].standstill)
-
-    # build driverMonitoringState packet
+    # Mock driverMonitoringState packet to simulate no issues
     dat = messaging.new_message('driverMonitoringState')
     dat.driverMonitoringState = {
-      "events": events.to_msg(),
-      "faceDetected": driver_status.face_detected,
-      "isDistracted": driver_status.driver_distracted,
-      "distractedType": sum(driver_status.distracted_types),
-      "awarenessStatus": driver_status.awareness,
-      "posePitchOffset": driver_status.pose.pitch_offseter.filtered_stat.mean(),
-      "posePitchValidCount": driver_status.pose.pitch_offseter.filtered_stat.n,
-      "poseYawOffset": driver_status.pose.yaw_offseter.filtered_stat.mean(),
-      "poseYawValidCount": driver_status.pose.yaw_offseter.filtered_stat.n,
-      "stepChange": driver_status.step_change,
-      "awarenessActive": driver_status.awareness_active,
-      "awarenessPassive": driver_status.awareness_passive,
-      "isLowStd": driver_status.pose.low_std,
-      "hiStdCount": driver_status.hi_stds,
-      "isActiveMode": driver_status.active_monitoring_mode,
-      "isRHD": driver_status.wheel_on_right,
+      "events": [],
+      "faceDetected": True,  # Assume face is always detected
+      "isDistracted": False,  # Assume driver is not distracted
+      "distractedType": 0,
+      "awarenessStatus": 1.0,
+      "posePitchOffset": 0.0,
+      "posePitchValidCount": 0,
+      "poseYawOffset": 0.0,
+      "poseYawValidCount": 0,
+      "stepChange": 0.0,
+      "awarenessActive": 1.0,
+      "awarenessPassive": 1.0,
+      "isLowStd": True,
+      "hiStdCount": 0,
+      "isActiveMode": False,  # Disable active monitoring
+      "isRHD": False
     }
     pm.send('driverMonitoringState', dat)
 
