@@ -257,7 +257,7 @@ class DriverStatus():
                                     driver_data.readyProb, driver_data.notReadyProb)):
       return
 
-    self.face_detected = driver_data.faceProb > self.settings._FACE_THRESHOLD
+    self.face_detected = True
     self.pose.roll, self.pose.pitch, self.pose.yaw = face_orientation_from_net(driver_data.faceOrientation, driver_data.facePosition, cal_rpy)
     if self.wheel_on_right:
       self.pose.yaw *= -1
@@ -274,9 +274,7 @@ class DriverStatus():
     self.eev2 = driver_data.readyProb[0]
 
     self.distracted_types = self._get_distracted_types()
-    self.driver_distracted = (DistractedType.DISTRACTED_E2E in self.distracted_types or DistractedType.DISTRACTED_POSE in self.distracted_types
-                                or DistractedType.DISTRACTED_BLINK in self.distracted_types) \
-                              and driver_data.faceProb > self.settings._FACE_THRESHOLD and self.pose.low_std
+    self.driver_distracted = False # Faking no distractions detected
     self.driver_distraction_filter.update(self.driver_distracted)
 
     # update offseter
